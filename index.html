@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Seat Booking</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 100px;
+      text-align: center;
+    }
+    svg {
+      border: 1px solid #ccc;
+      max-width: 100%;
+      height: auto;
+    }
+    button {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Seat Booking</h1>
+
+  <!-- Role Selection -->
+  <label for="roleSelect">Select Role:</label>
+  <select id="roleSelect">
+    <option value="user">User</option>
+    <option value="admin">Admin</option>
+  </select>
+
+  <!-- Admin Panel -->
+  <div id="adminPanel" style="display: none;">
+    <h2>Admin Panel</h2>
+    <input type="file" id="svgUpload" accept=".svg">
+    <button id="saveLayoutBtn">Save Current Layout</button>
+    <select id="savedLayoutsDropdown">
+      <option value="">Select Saved Layout</option>
+    </select>
+    <button id="loadLayoutBtn">Load Selected Layout</button>
+    <button id="deleteLayoutBtn">Delete Selected Layout</button></br></br>
+    <label>Seat Size: <input type="number" id="seatSizeInput" value="10" min="5"></label>
+    <label>Rows: <input type="number" id="rowInput" value="5" min="1"></label>
+    <label>Cols: <input type="number" id="colInput" value="5" min="1"></label>
+    <button id="createSeatsBtn">Create Seats</button>
+  </div>
+
+  <!-- User Panel -->
+  <div id="userPanel">
+    <h2>User Panel</h2>
+    <svg id="seatSVG"></svg>
+    <p id="selected">Selected Seats: None</p>
+    <p id="total">Total: ₹0</p>
+    <button id="confirmBtn">Confirm Booking</button>
+  </div>
+
+  <script src="script.js" defer></script>
+</body>
+</html>
