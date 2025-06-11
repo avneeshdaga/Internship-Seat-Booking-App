@@ -14,6 +14,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var occupiedSeats = new Set();
     var seatMapType = 'grid'; // 'grid' or 'svg'
     var lastSVGString = ''; // Store last uploaded/loaded SVG string
+    var maxSelectableSeats = null;
     var roleSelect = document.getElementById('roleSelect');
     var adminPanel = document.getElementById('adminPanel');
     var userPanel = document.getElementById('userPanel');
@@ -221,30 +222,47 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             alert('Layout deleted!');
         }
     });
-    // Handle seat selection toggle
+    // Ask user how many seats they want before allowing selection
+    function promptForSeatCount() {
+        var input = prompt("How many seats do you want to select?");
+        if (!input) {
+            maxSelectableSeats = null;
+            alert("Please enter a number to proceed.");
+            return false;
+        }
+        var num = parseInt(input);
+        if (isNaN(num) || num <= 0) {
+            maxSelectableSeats = null;
+            alert("Please enter a valid positive number.");
+            return false;
+        }
+        maxSelectableSeats = num;
+        selectedSeats.clear();
+        updateUI();
+        alert("You can now select up to ".concat(maxSelectableSeats, " seats."));
+        return true;
+    }
+    // Modify seat selection logic to enforce the limit
     function toggleSVGSeat(seatId, rect) {
+        if (maxSelectableSeats === null) {
+            if (!promptForSeatCount())
+                return;
+        }
         if (selectedSeats.has(seatId)) {
             selectedSeats.delete(seatId);
             rect.setAttribute('fill', '#e0e0e0');
         }
         else {
+            if (selectedSeats.size >= (maxSelectableSeats !== null && maxSelectableSeats !== void 0 ? maxSelectableSeats : 0)) {
+                alert("You can only select up to ".concat(maxSelectableSeats, " seats."));
+                return;
+            }
             selectedSeats.add(seatId);
             rect.setAttribute('fill', '#4caf50');
         }
         updateUI();
     }
-    // Update selected display
-    function updateUI() {
-        var seatsArray = __spreadArray([], selectedSeats, true);
-        if (seatsArray.length > 0) {
-            selectedDisplay.textContent = "Selected Seats: ".concat(seatsArray.join(', '));
-        }
-        else {
-            selectedDisplay.textContent = 'Selected Seats: None';
-        }
-        totalDisplay.textContent = "Total: \u20B9".concat(seatsArray.length * pricePerSeat);
-    }
-    // Confirm booking
+    // Optionally, reset maxSelectableSeats after booking is confirmed
     confirmBtn.addEventListener('click', function () {
         if (selectedSeats.size === 0) {
             alert("No seats selected.");
@@ -278,6 +296,29 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             // Re-attach event listeners
             attachSVGSeatListeners();
         }
+        maxSelectableSeats = null; // Reset for next booking
         updateUI();
     });
+    function updateUI() {
+        // Update selected and total displays
+        selectedDisplay.textContent = "Selected Seats: ".concat(__spreadArray([], selectedSeats, true).join(', ') || 'None');
+        totalDisplay.textContent = "Total: \u20B9".concat(selectedSeats.size * pricePerSeat);
+        // Optionally, update seat colors for SVG seats (in case of external changes)
+        if (seatMapType === 'svg') {
+            var seatRects = seatSVG.querySelectorAll('rect');
+            seatRects.forEach(function (rect, idx) {
+                var seatRect = rect;
+                var seatId = seatRect.getAttribute('data-seat-id') || "".concat(idx);
+                if (occupiedSeats.has(seatId)) {
+                    seatRect.setAttribute('fill', '#d32f2f');
+                }
+                else if (selectedSeats.has(seatId)) {
+                    seatRect.setAttribute('fill', '#4caf50');
+                }
+                else if (seatRect.getAttribute('width') && seatRect.getAttribute('height') && parseFloat(seatRect.getAttribute('width') || "0") < 50 && parseFloat(seatRect.getAttribute('height') || "0") < 50) {
+                    seatRect.setAttribute('fill', '#e0e0e0');
+                }
+            });
+        }
+    }
 })(); // End IIFE

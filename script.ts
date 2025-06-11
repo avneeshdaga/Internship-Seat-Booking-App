@@ -5,6 +5,7 @@ let selectedSeats: Set<string> = new Set();
 let occupiedSeats: Set<string> = new Set();
 let seatMapType: 'grid' | 'svg' = 'grid'; // 'grid' or 'svg'
 let lastSVGString: string = '';   // Store last uploaded/loaded SVG string
+let maxSelectableSeats: number | null = null;
 
 const roleSelect = document.getElementById('roleSelect') as HTMLSelectElement;
 const adminPanel = document.getElementById('adminPanel') as HTMLDivElement;
@@ -228,30 +229,47 @@ deleteLayoutBtn.addEventListener('click', () => {
   }
 });
 
-// Handle seat selection toggle
+// Ask user how many seats they want before allowing selection
+function promptForSeatCount() {
+  const input = prompt("How many seats do you want to select?");
+  if (!input) {
+    maxSelectableSeats = null;
+    alert("Please enter a number to proceed.");
+    return false;
+  }
+  const num = parseInt(input);
+  if (isNaN(num) || num <= 0) {
+    maxSelectableSeats = null;
+    alert("Please enter a valid positive number.");
+    return false;
+  }
+  maxSelectableSeats = num;
+  selectedSeats.clear();
+  updateUI();
+  alert(`You can now select up to ${maxSelectableSeats} seats.`);
+  return true;
+}
+
+// Modify seat selection logic to enforce the limit
 function toggleSVGSeat(seatId: string, rect: SVGRectElement): void {
+  if (maxSelectableSeats === null) {
+    if (!promptForSeatCount()) return;
+  }
   if (selectedSeats.has(seatId)) {
     selectedSeats.delete(seatId);
     rect.setAttribute('fill', '#e0e0e0');
   } else {
+    if (selectedSeats.size >= (maxSelectableSeats ?? 0)) {
+      alert(`You can only select up to ${maxSelectableSeats} seats.`);
+      return;
+    }
     selectedSeats.add(seatId);
     rect.setAttribute('fill', '#4caf50');
   }
   updateUI();
 }
 
-// Update selected display
-function updateUI(): void {
-  const seatsArray = [...selectedSeats];
-  if (seatsArray.length > 0) {
-    selectedDisplay.textContent = `Selected Seats: ${seatsArray.join(', ')}`;
-  } else {
-    selectedDisplay.textContent = 'Selected Seats: None';
-  }
-  totalDisplay.textContent = `Total: ₹${seatsArray.length * pricePerSeat}`;
-}
-
-// Confirm booking
+// Optionally, reset maxSelectableSeats after booking is confirmed
 confirmBtn.addEventListener('click', () => {
   if (selectedSeats.size === 0) {
     alert("No seats selected.");
@@ -287,7 +305,30 @@ confirmBtn.addEventListener('click', () => {
     // Re-attach event listeners
     attachSVGSeatListeners();
   }
+  maxSelectableSeats = null; // Reset for next booking
   updateUI();
 });
+
+function updateUI(): void {
+  // Update selected and total displays
+  selectedDisplay.textContent = `Selected Seats: ${[...selectedSeats].join(', ') || 'None'}`;
+  totalDisplay.textContent = `Total: ₹${selectedSeats.size * pricePerSeat}`;
+
+  // Optionally, update seat colors for SVG seats (in case of external changes)
+  if (seatMapType === 'svg') {
+    const seatRects = seatSVG.querySelectorAll('rect');
+    seatRects.forEach((rect, idx) => {
+      const seatRect = rect as SVGRectElement;
+      const seatId = seatRect.getAttribute('data-seat-id') || `${idx}`;
+      if (occupiedSeats.has(seatId)) {
+        seatRect.setAttribute('fill', '#d32f2f');
+      } else if (selectedSeats.has(seatId)) {
+        seatRect.setAttribute('fill', '#4caf50');
+      } else if (seatRect.getAttribute('width') && seatRect.getAttribute('height') && parseFloat(seatRect.getAttribute('width') || "0") < 50 && parseFloat(seatRect.getAttribute('height') || "0") < 50) {
+        seatRect.setAttribute('fill', '#e0e0e0');
+      }
+    });
+  }
+}
 
 })(); // End IIFE
