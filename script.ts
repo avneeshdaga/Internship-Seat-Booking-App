@@ -309,6 +309,16 @@ confirmBtn.addEventListener('click', () => {
   updateUI();
 });
 
+const resetBtn = document.createElement('button');
+resetBtn.textContent = "Reset Selection";
+resetBtn.onclick = () => {
+  maxSelectableSeats = null;
+  selectedSeats.clear();
+  updateUI();
+  alert("Selection reset. Please select how many seats you want again.");
+};
+userPanel.appendChild(resetBtn);
+
 function updateUI(): void {
   // Update selected and total displays
   selectedDisplay.textContent = `Selected Seats: ${[...selectedSeats].join(', ') || 'None'}`;

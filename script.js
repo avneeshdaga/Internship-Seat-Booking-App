@@ -299,6 +299,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         maxSelectableSeats = null; // Reset for next booking
         updateUI();
     });
+    var resetBtn = document.createElement('button');
+    resetBtn.textContent = "Reset Selection";
+    resetBtn.onclick = function () {
+        maxSelectableSeats = null;
+        selectedSeats.clear();
+        updateUI();
+        alert("Selection reset. Please select how many seats you want again.");
+    };
+    userPanel.appendChild(resetBtn);
     function updateUI() {
         // Update selected and total displays
         selectedDisplay.textContent = "Selected Seats: ".concat(__spreadArray([], selectedSeats, true).join(', ') || 'None');
