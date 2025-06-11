@@ -42,8 +42,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         }
     });
     function attachSVGSeatListeners() {
-        // Remove all old <text> elements before adding new ones
-        seatSVG.querySelectorAll('text').forEach(function (t) { return t.remove(); });
         var seatRects = seatSVG.querySelectorAll('rect');
         seatRects.forEach(function (rect, idx) {
             var seatRect = rect;
@@ -200,21 +198,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 rect.setAttribute('fill', occupiedSeats.has(seatId) ? '#d32f2f' : '#e0e0e0');
                 rect.setAttribute('stroke', '#444');
                 rect.setAttribute('data-seat-id', seatId);
-                // Seat Text (ID inside the box)
-                var text = document.createElementNS(svgNS, 'text');
-                text.setAttribute('x', (x + seatSize / 2).toString());
-                text.setAttribute('y', (y + seatSize / 2 + 5).toString());
-                text.setAttribute('text-anchor', 'middle');
-                text.setAttribute('font-size', '12');
-                text.setAttribute('fill', 'black');
-                text.setAttribute('pointer-events', 'none'); // so clicks go to the rect
-                text.textContent = seatId;
                 if (!occupiedSeats.has(seatId)) {
                     rect.style.cursor = 'pointer';
-                    rect.addEventListener('click', function () { return toggleSVGSeat(seatId, rect, text); });
+                    rect.addEventListener('click', function () { return toggleSVGSeat(seatId, rect); });
                 }
                 seatSVG.appendChild(rect);
-                seatSVG.appendChild(text);
             };
             for (var c = 0; c < cols; c++) {
                 _loop_1(c);
@@ -234,7 +222,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         }
     });
     // Handle seat selection toggle
-    function toggleSVGSeat(seatId, rect, textElement) {
+    function toggleSVGSeat(seatId, rect) {
         if (selectedSeats.has(seatId)) {
             selectedSeats.delete(seatId);
             rect.setAttribute('fill', '#e0e0e0');

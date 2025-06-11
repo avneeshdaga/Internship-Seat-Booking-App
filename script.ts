@@ -35,9 +35,6 @@ roleSelect.addEventListener('change', () => {
 });
 
 function attachSVGSeatListeners(): void {
-  // Remove all old <text> elements before adding new ones
-  seatSVG.querySelectorAll('text').forEach(t => t.remove());
-
   const seatRects = seatSVG.querySelectorAll('rect');
   seatRects.forEach((rect, idx) => {
     const seatRect = rect as SVGRectElement;
@@ -208,23 +205,12 @@ function generateSVGSeats(rows: number, cols: number, seatSize: number): void {
       rect.setAttribute('stroke', '#444');
       rect.setAttribute('data-seat-id', seatId);
 
-      // Seat Text (ID inside the box)
-      const text = document.createElementNS(svgNS, 'text');
-      text.setAttribute('x', (x + seatSize / 2).toString());
-      text.setAttribute('y', (y + seatSize / 2 + 5).toString());
-      text.setAttribute('text-anchor', 'middle');
-      text.setAttribute('font-size', '12');
-      text.setAttribute('fill', 'black');
-      text.setAttribute('pointer-events', 'none'); // so clicks go to the rect
-      text.textContent = seatId;
-
       if (!occupiedSeats.has(seatId)) {
         rect.style.cursor = 'pointer';
-        rect.addEventListener('click', () => toggleSVGSeat(seatId, rect, text));
+        rect.addEventListener('click', () => toggleSVGSeat(seatId, rect));
       }
 
       seatSVG.appendChild(rect);
-      seatSVG.appendChild(text);
     }
   }
 }
@@ -243,7 +229,7 @@ deleteLayoutBtn.addEventListener('click', () => {
 });
 
 // Handle seat selection toggle
-function toggleSVGSeat(seatId: string, rect: SVGRectElement, textElement: SVGTextElement): void {
+function toggleSVGSeat(seatId: string, rect: SVGRectElement): void {
   if (selectedSeats.has(seatId)) {
     selectedSeats.delete(seatId);
     rect.setAttribute('fill', '#e0e0e0');
