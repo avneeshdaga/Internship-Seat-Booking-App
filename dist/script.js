@@ -35,7 +35,7 @@
     });
     function attachSVGSeatListeners() {
         // Remove old text elements if needed
-        seatSVG.querySelectorAll('text').forEach(t => t.remove());
+        //seatSVG.querySelectorAll('text').forEach(t => t.remove());
         const seatRects = seatSVG.querySelectorAll('rect');
         seatRects.forEach((rect, idx) => {
             const seatRect = rect;
@@ -61,16 +61,21 @@
                 else {
                     seatRect.setAttribute('fill', '#d32f2f');
                 }
-                // Add seat ID as text
-                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                text.setAttribute('x', (parseFloat(seatRect.getAttribute('x') || "0") + width / 2).toString());
-                text.setAttribute('y', (parseFloat(seatRect.getAttribute('y') || "0") + height / 2 + 5).toString());
-                text.setAttribute('text-anchor', 'middle');
-                text.setAttribute('font-size', '12');
-                text.setAttribute('fill', 'black');
-                text.setAttribute('pointer-events', 'none');
-                text.textContent = seatId;
-                seatSVG.appendChild(text);
+                // --- Add seat ID as text if not already present ---
+                // Check if a <text> element already exists at this position
+                const existingText = Array.from(seatSVG.querySelectorAll('text')).find(t => Math.abs(parseFloat(t.getAttribute('x') || "0") - (parseFloat(seatRect.getAttribute('x') || "0") + width / 2)) < 1 &&
+                    Math.abs(parseFloat(t.getAttribute('y') || "0") - (parseFloat(seatRect.getAttribute('y') || "0") + height / 2 + 5)) < 1);
+                if (!existingText) {
+                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    text.setAttribute('x', (parseFloat(seatRect.getAttribute('x') || "0") + width / 2).toString());
+                    text.setAttribute('y', (parseFloat(seatRect.getAttribute('y') || "0") + height / 2 + 5).toString());
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('font-size', '12');
+                    text.setAttribute('fill', 'black');
+                    text.setAttribute('pointer-events', 'none');
+                    text.textContent = seatId;
+                    seatSVG.appendChild(text);
+                }
             }
             else {
                 seatRect.setAttribute('fill', '#bdbdbd');

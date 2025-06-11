@@ -43,13 +43,21 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     });
     function attachSVGSeatListeners() {
         // Remove old text elements if needed
-        seatSVG.querySelectorAll('text').forEach(function (t) { return t.remove(); });
+        //seatSVG.querySelectorAll('text').forEach(t => t.remove());
         var seatRects = seatSVG.querySelectorAll('rect');
         seatRects.forEach(function (rect, idx) {
             var seatRect = rect;
             var seatId = seatRect.getAttribute('data-seat-id') || "".concat(idx);
             var width = parseFloat(seatRect.getAttribute('width') || "0");
             var height = parseFloat(seatRect.getAttribute('height') || "0");
+            // Try to get x/y from attributes, fallback to getBBox if missing
+            var x = seatRect.hasAttribute('x') ? parseFloat(seatRect.getAttribute('x') || "0") : undefined;
+            var y = seatRect.hasAttribute('y') ? parseFloat(seatRect.getAttribute('y') || "0") : undefined;
+            if (x === undefined || y === undefined) {
+                var bbox = seatRect.getBBox();
+                x = bbox.x;
+                y = bbox.y;
+            }
             if (width < 50 && height < 50) {
                 seatRect.style.cursor = 'pointer';
                 if (!occupiedSeats.has(seatId)) {
@@ -69,16 +77,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 else {
                     seatRect.setAttribute('fill', '#d32f2f');
                 }
-                // Add seat ID as text
-                var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                text.setAttribute('x', (parseFloat(seatRect.getAttribute('x') || "0") + width / 2).toString());
-                text.setAttribute('y', (parseFloat(seatRect.getAttribute('y') || "0") + height / 2 + 5).toString());
-                text.setAttribute('text-anchor', 'middle');
-                text.setAttribute('font-size', '12');
-                text.setAttribute('fill', 'black');
-                text.setAttribute('pointer-events', 'none');
-                text.textContent = seatId;
-                seatSVG.appendChild(text);
+                // --- Add seat ID as text if not already present ---
+                // Check if a <text> element already exists at this position
+                var existingText = Array.from(seatSVG.querySelectorAll('text')).find(function (t) {
+                    return Math.abs(parseFloat(t.getAttribute('x') || "0") - (parseFloat(seatRect.getAttribute('x') || "0") + width / 2)) < 1 &&
+                        Math.abs(parseFloat(t.getAttribute('y') || "0") - (parseFloat(seatRect.getAttribute('y') || "0") + height / 2 + 5)) < 1;
+                });
+                if (!existingText) {
+                    var text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                    text.setAttribute('x', (parseFloat(seatRect.getAttribute('x') || "0") + width / 2).toString());
+                    text.setAttribute('y', (parseFloat(seatRect.getAttribute('y') || "0") + height / 2 + 5).toString());
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('font-size', '12');
+                    text.setAttribute('fill', 'black');
+                    text.setAttribute('pointer-events', 'none');
+                    text.textContent = seatId;
+                    seatSVG.appendChild(text);
+                }
             }
             else {
                 seatRect.setAttribute('fill', '#bdbdbd');
@@ -133,10 +148,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         for (var i = 0; i < localStorage.length; i++) {
             var key = localStorage.key(i);
             if (key && key.startsWith('seatLayout_')) {
-                var name = key.replace('seatLayout_', '');
+                var name_1 = key.replace('seatLayout_', '');
                 var option = document.createElement('option');
                 option.value = key;
-                option.textContent = name;
+                option.textContent = name_1;
                 savedLayoutsDropdown.appendChild(option);
             }
         }
