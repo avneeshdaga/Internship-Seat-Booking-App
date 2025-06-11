@@ -34,14 +34,24 @@
         }
     });
     function attachSVGSeatListeners() {
-        // Remove old text elements if needed
-        //seatSVG.querySelectorAll('text').forEach(t => t.remove());
         const seatRects = seatSVG.querySelectorAll('rect');
         seatRects.forEach((rect, idx) => {
             const seatRect = rect;
             const seatId = seatRect.getAttribute('data-seat-id') || `${idx}`;
             const width = parseFloat(seatRect.getAttribute('width') || "0");
             const height = parseFloat(seatRect.getAttribute('height') || "0");
+            // Try to get x/y from attributes, fallback to getBBox if missing
+            let x = seatRect.hasAttribute('x') ? parseFloat(seatRect.getAttribute('x') || "0") : undefined;
+            let y = seatRect.hasAttribute('y') ? parseFloat(seatRect.getAttribute('y') || "0") : undefined;
+            if (x === undefined || y === undefined) {
+                const bbox = seatRect.getBBox();
+                x = bbox.x;
+                y = bbox.y;
+            }
+            // Skip rectangles at (0,0) with no data-seat-id or with width/height 0
+            if ((x === 0 && y === 0 && !seatRect.hasAttribute('data-seat-id')) || width === 0 || height === 0) {
+                return;
+            }
             if (width < 50 && height < 50) {
                 seatRect.style.cursor = 'pointer';
                 if (!occupiedSeats.has(seatId)) {
@@ -60,21 +70,6 @@
                 }
                 else {
                     seatRect.setAttribute('fill', '#d32f2f');
-                }
-                // --- Add seat ID as text if not already present ---
-                // Check if a <text> element already exists at this position
-                const existingText = Array.from(seatSVG.querySelectorAll('text')).find(t => Math.abs(parseFloat(t.getAttribute('x') || "0") - (parseFloat(seatRect.getAttribute('x') || "0") + width / 2)) < 1 &&
-                    Math.abs(parseFloat(t.getAttribute('y') || "0") - (parseFloat(seatRect.getAttribute('y') || "0") + height / 2 + 5)) < 1);
-                if (!existingText) {
-                    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-                    text.setAttribute('x', (parseFloat(seatRect.getAttribute('x') || "0") + width / 2).toString());
-                    text.setAttribute('y', (parseFloat(seatRect.getAttribute('y') || "0") + height / 2 + 5).toString());
-                    text.setAttribute('text-anchor', 'middle');
-                    text.setAttribute('font-size', '12');
-                    text.setAttribute('fill', 'black');
-                    text.setAttribute('pointer-events', 'none');
-                    text.textContent = seatId;
-                    seatSVG.appendChild(text);
                 }
             }
             else {
@@ -195,21 +190,11 @@
                 rect.setAttribute('fill', occupiedSeats.has(seatId) ? '#d32f2f' : '#e0e0e0');
                 rect.setAttribute('stroke', '#444');
                 rect.setAttribute('data-seat-id', seatId);
-                // Seat Text (ID inside the box)
-                const text = document.createElementNS(svgNS, 'text');
-                text.setAttribute('x', (x + seatSize / 2).toString());
-                text.setAttribute('y', (y + seatSize / 2 + 5).toString());
-                text.setAttribute('text-anchor', 'middle');
-                text.setAttribute('font-size', '12');
-                text.setAttribute('fill', 'black');
-                text.setAttribute('pointer-events', 'none'); // so clicks go to the rect
-                text.textContent = seatId;
                 if (!occupiedSeats.has(seatId)) {
                     rect.style.cursor = 'pointer';
-                    rect.addEventListener('click', () => toggleSVGSeat(seatId, rect, text));
+                    rect.addEventListener('click', () => toggleSVGSeat(seatId, rect));
                 }
                 seatSVG.appendChild(rect);
-                seatSVG.appendChild(text);
             }
         }
     }
@@ -226,7 +211,7 @@
         }
     });
     // Handle seat selection toggle
-    function toggleSVGSeat(seatId, rect, textElement) {
+    function toggleSVGSeat(seatId, rect) {
         if (selectedSeats.has(seatId)) {
             selectedSeats.delete(seatId);
             rect.setAttribute('fill', '#e0e0e0');
