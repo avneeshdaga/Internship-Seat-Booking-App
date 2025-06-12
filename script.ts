@@ -28,7 +28,6 @@ const deleteLayoutBtn = document.getElementById('deleteLayoutBtn') as HTMLButton
 // --- Designer Elements ---
 const designerSVGElement = document.getElementById('designerSVG');
 const designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
-const designerSaveBtn = document.getElementById('designerSaveBtn') as HTMLButtonElement;
 const addSeatBtn = document.getElementById('addSeatBtn') as HTMLButtonElement;
 const deleteSeatBtn = document.getElementById('deleteSeatBtn') as HTMLButtonElement;
 const seatIdInput = document.getElementById('seatIdInput') as HTMLInputElement;
@@ -163,10 +162,6 @@ svgUpload.addEventListener('change', function(event: Event) {
 
 // --- Save Layouts ---
 saveLayoutBtn.addEventListener('click', () => saveLayout('grid', seatSVG));
-designerSaveBtn.addEventListener('click', () => {
-  if (designerSVG) saveLayout('designer', designerSVG);
-  else alert('SVG designer is not available.');
-});
 
 // --- Load Layouts ---
 loadLayoutBtn.addEventListener('click', () => {

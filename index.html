@@ -33,13 +33,14 @@
   <div id="adminPanel">
     <h2>Admin Panel</h2>
 
-    <!-- Grid Layout Section -->
-    <fieldset style="margin-bottom: 1em;">
-      <legend>Grid Layout</legend>
-      <label>Rows: <input id="rowInput" type="number" min="1" value="5"></label>
-      <label>Columns: <input id="colInput" type="number" min="1" value="8"></label>
-      <label>Seat Size: <input id="seatSizeInput" type="number" min="10" value="30"></label>
-      <button id="createSeatsBtn">Create Grid</button>
+    <!-- Layout Management Section -->
+    <fieldset>
+      <legend>Layout Management</legend>
+      <button id="saveLayoutBtn">Save Current Grid Layout</button>
+      <select id="savedLayoutsDropdown"></select>
+      <button id="loadLayoutBtn">Load Selected Layout</button>
+      <button id="deleteLayoutBtn">Delete Selected Layout</button>
+      <input id="svgUpload" type="file" accept=".svg">
     </fieldset>
 
     <!-- Visual Designer Section -->
@@ -53,16 +54,14 @@
       <svg id="designerSVG" width="600" height="300" style="border:1px solid #888; background:#f8f8f8; margin-top:10px;"></svg>
     </fieldset>
 
-    <!-- Layout Management Section -->
-    <fieldset>
-      <legend>Layout Management</legend>
-      <button id="saveLayoutBtn">Save Current Grid Layout</button>
-      <select id="savedLayoutsDropdown"></select>
-      <button id="loadLayoutBtn">Load Selected Layout</button>
-      <button id="deleteLayoutBtn">Delete Selected Layout</button>
-      <input id="svgUpload" type="file" accept=".svg">
+    <!-- Grid Layout Section -->
+    <fieldset style="margin-bottom: 1em;">
+      <legend>Grid Layout</legend>
+      <label>Rows: <input id="rowInput" type="number" min="1" value="5"></label>
+      <label>Columns: <input id="colInput" type="number" min="1" value="8"></label>
+      <label>Seat Size: <input id="seatSizeInput" type="number" min="10" value="30"></label>
+      <button id="createSeatsBtn">Create Grid</button>
     </fieldset>
-
   </div>
 
   <!-- User Panel (hidden when admin is active) -->

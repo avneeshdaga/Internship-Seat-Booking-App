@@ -27,7 +27,6 @@
     // --- Designer Elements ---
     const designerSVGElement = document.getElementById('designerSVG');
     const designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
-    const designerSaveBtn = document.getElementById('designerSaveBtn');
     const addSeatBtn = document.getElementById('addSeatBtn');
     const deleteSeatBtn = document.getElementById('deleteSeatBtn');
     const seatIdInput = document.getElementById('seatIdInput');
@@ -149,12 +148,6 @@
     });
     // --- Save Layouts ---
     saveLayoutBtn.addEventListener('click', () => saveLayout('grid', seatSVG));
-    designerSaveBtn.addEventListener('click', () => {
-        if (designerSVG)
-            saveLayout('designer', designerSVG);
-        else
-            alert('SVG designer is not available.');
-    });
     // --- Load Layouts ---
     loadLayoutBtn.addEventListener('click', () => {
         seatMapType = 'svg';

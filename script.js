@@ -35,7 +35,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     // --- Designer Elements ---
     var designerSVGElement = document.getElementById('designerSVG');
     var designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
-    var designerSaveBtn = document.getElementById('designerSaveBtn');
     var addSeatBtn = document.getElementById('addSeatBtn');
     var deleteSeatBtn = document.getElementById('deleteSeatBtn');
     var seatIdInput = document.getElementById('seatIdInput');
@@ -160,12 +159,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     });
     // --- Save Layouts ---
     saveLayoutBtn.addEventListener('click', function () { return saveLayout('grid', seatSVG); });
-    designerSaveBtn.addEventListener('click', function () {
-        if (designerSVG)
-            saveLayout('designer', designerSVG);
-        else
-            alert('SVG designer is not available.');
-    });
     // --- Load Layouts ---
     loadLayoutBtn.addEventListener('click', function () {
         seatMapType = 'svg';
