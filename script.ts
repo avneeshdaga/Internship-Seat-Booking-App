@@ -5,6 +5,7 @@
   let selectedSeats: Set<string> = new Set();
   let occupiedSeats: Set<string> = new Set();
   let seatMapType: 'grid' | 'svg' = 'grid';
+
   let lastSVGString: string = '';
   let maxSelectableSeats: number | null = null;
   let designerSeats: SVGRectElement[] = [];
@@ -19,18 +20,24 @@
   const colInput = document.getElementById('colInput') as HTMLInputElement;
   const seatSizeInput = document.getElementById('seatSizeInput') as HTMLInputElement;
   const createSeatsBtn = document.getElementById('createSeatsBtn') as HTMLButtonElement;
+
   const seatSVG = document.getElementById('seatSVG') as unknown as SVGSVGElement;
   const selectedDisplay = document.getElementById('selected') as HTMLParagraphElement;
   const totalDisplay = document.getElementById('total') as HTMLParagraphElement;
   const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
   const svgUpload = document.getElementById('svgUpload') as HTMLInputElement;
+  const saveLayoutBtn = document.getElementById('saveLayoutBtn') as HTMLButtonElement;
+
+
   const savedLayoutsDropdown = document.getElementById('savedLayoutsDropdown') as HTMLSelectElement;
   const loadLayoutBtn = document.getElementById('loadLayoutBtn') as HTMLButtonElement;
   const deleteLayoutBtn = document.getElementById('deleteLayoutBtn') as HTMLButtonElement;
+
   const addSeatBtn = document.getElementById('addSeatBtn') as HTMLButtonElement;
   const deleteSeatBtn = document.getElementById('deleteSeatBtn') as HTMLButtonElement;
   const seatIdInput = document.getElementById('seatIdInput') as HTMLInputElement;
   const updateSeatIdBtn = document.getElementById('updateSeatIdBtn') as HTMLButtonElement;
+
   const saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn') as HTMLButtonElement;
   const saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn') as HTMLButtonElement;
   const designerSVGElement = document.getElementById('designerSVG');
@@ -69,6 +76,35 @@
       });
     }
   }
+
+  // Save current SVG layout
+    saveLayoutBtn.addEventListener('click', () => {
+        const layoutName = prompt("Enter a name for this layout:");
+        if (!layoutName) return;
+        localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
+        updateSavedLayoutsDropdown();
+        alert('Layout saved!');
+    });
+
+  saveDesignerLayoutBtn.addEventListener('click', () => {
+      const layoutName = prompt("Enter a name for this designer layout:");
+      if (!layoutName) return;
+      if (designerSVG) {
+        localStorage.setItem('seatLayout_' + layoutName, designerSVG.outerHTML);
+        updateSavedLayoutsDropdown();
+        alert('Designer layout saved!');
+      } else {
+        alert('Designer SVG is not available.');
+      }
+  });
+  
+  saveUploadedLayoutBtn.addEventListener('click', () => {
+      const layoutName = prompt("Enter a name for this uploaded layout:");
+      if (!layoutName) return;
+        localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
+        updateSavedLayoutsDropdown();
+        alert('Uploaded SVG layout saved!');
+  });
 
   // --- Role Toggle ---
   roleSelect.addEventListener('change', () => {
@@ -180,36 +216,6 @@
       alert('Layout deleted!');
     }
   });
-
-  if (saveDesignerLayoutBtn) {
-    saveDesignerLayoutBtn.addEventListener('click', () => {
-      const layoutName = prompt("Enter a name for this designer layout:");
-      if (!layoutName) return;
-      const key = `designerLayout_${layoutName}`;
-      if (designerSVG && designerSVG.querySelectorAll('rect').length > 0) {
-        localStorage.setItem(key, designerSVG.outerHTML);
-        updateSavedLayoutsDropdown();
-        alert('Designer layout saved!');
-      } else {
-        alert('No seats in designer to save!');
-      }
-    });
-  }
-
-  if (saveUploadedLayoutBtn) {
-    saveUploadedLayoutBtn.addEventListener('click', () => {
-      const layoutName = prompt("Enter a name for this uploaded layout:");
-      if (!layoutName) return;
-      const key = `designerLayout_${layoutName}`;
-      if (seatSVG && seatSVG.querySelectorAll('rect').length > 0) {
-        localStorage.setItem(key, seatSVG.outerHTML);
-        updateSavedLayoutsDropdown();
-        alert('Uploaded SVG layout saved!');
-      } else {
-        alert('No uploaded SVG seats to save!');
-      }
-    });
-  }
 
   updateSavedLayoutsDropdown();
 

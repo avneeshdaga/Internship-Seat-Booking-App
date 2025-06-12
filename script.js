@@ -32,6 +32,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var totalDisplay = document.getElementById('total');
     var confirmBtn = document.getElementById('confirmBtn');
     var svgUpload = document.getElementById('svgUpload');
+    var saveLayoutBtn = document.getElementById('saveLayoutBtn');
     var savedLayoutsDropdown = document.getElementById('savedLayoutsDropdown');
     var loadLayoutBtn = document.getElementById('loadLayoutBtn');
     var deleteLayoutBtn = document.getElementById('deleteLayoutBtn');
@@ -77,6 +78,36 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             });
         }
     }
+    // Save current SVG layout
+    saveLayoutBtn.addEventListener('click', function () {
+        var layoutName = prompt("Enter a name for this layout:");
+        if (!layoutName)
+            return;
+        localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
+        updateSavedLayoutsDropdown();
+        alert('Layout saved!');
+    });
+    saveDesignerLayoutBtn.addEventListener('click', function () {
+        var layoutName = prompt("Enter a name for this designer layout:");
+        if (!layoutName)
+            return;
+        if (designerSVG) {
+            localStorage.setItem('seatLayout_' + layoutName, designerSVG.outerHTML);
+            updateSavedLayoutsDropdown();
+            alert('Designer layout saved!');
+        }
+        else {
+            alert('Designer SVG is not available.');
+        }
+    });
+    saveUploadedLayoutBtn.addEventListener('click', function () {
+        var layoutName = prompt("Enter a name for this uploaded layout:");
+        if (!layoutName)
+            return;
+        localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
+        updateSavedLayoutsDropdown();
+        alert('Uploaded SVG layout saved!');
+    });
     // --- Role Toggle ---
     roleSelect.addEventListener('change', function () {
         if (roleSelect.value === 'admin') {
@@ -191,38 +222,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             alert('Layout deleted!');
         }
     });
-    if (saveDesignerLayoutBtn) {
-        saveDesignerLayoutBtn.addEventListener('click', function () {
-            var layoutName = prompt("Enter a name for this designer layout:");
-            if (!layoutName)
-                return;
-            var key = "designerLayout_".concat(layoutName);
-            if (designerSVG && designerSVG.querySelectorAll('rect').length > 0) {
-                localStorage.setItem(key, designerSVG.outerHTML);
-                updateSavedLayoutsDropdown();
-                alert('Designer layout saved!');
-            }
-            else {
-                alert('No seats in designer to save!');
-            }
-        });
-    }
-    if (saveUploadedLayoutBtn) {
-        saveUploadedLayoutBtn.addEventListener('click', function () {
-            var layoutName = prompt("Enter a name for this uploaded layout:");
-            if (!layoutName)
-                return;
-            var key = "designerLayout_".concat(layoutName);
-            if (seatSVG && seatSVG.querySelectorAll('rect').length > 0) {
-                localStorage.setItem(key, seatSVG.outerHTML);
-                updateSavedLayoutsDropdown();
-                alert('Uploaded SVG layout saved!');
-            }
-            else {
-                alert('No uploaded SVG seats to save!');
-            }
-        });
-    }
     updateSavedLayoutsDropdown();
     // --- Seat Selection Logic ---
     function attachSVGSeatListeners() {
