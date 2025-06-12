@@ -7,7 +7,7 @@
     let seatMapType = 'grid'; // 'grid' or 'svg'
     let lastSVGString = ''; // Store last uploaded/loaded SVG string
     let maxSelectableSeats = null;
-    // --- DOM Elements ---
+    //  DOM Elements 
     const roleSelect = document.getElementById('roleSelect');
     const adminPanel = document.getElementById('adminPanel');
     const userPanel = document.getElementById('userPanel');
@@ -24,7 +24,7 @@
     const loadLayoutBtn = document.getElementById('loadLayoutBtn');
     const seatSizeInput = document.getElementById('seatSizeInput');
     const deleteLayoutBtn = document.getElementById('deleteLayoutBtn');
-    // --- Designer Elements ---
+    //  Designer Elements 
     const designerSVGElement = document.getElementById('designerSVG');
     const designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
     const addSeatBtn = document.getElementById('addSeatBtn');
@@ -33,10 +33,8 @@
     const updateSeatIdBtn = document.getElementById('updateSeatIdBtn');
     let designerSeats = [];
     let selectedDesignerSeat = null;
-    // --- Utility Functions ---
-    /**
-     * Save a layout (grid or designer) to localStorage with a unique key.
-     */
+    // _ Utility Functions _
+    // Save layout to localStorage
     function saveLayout(type, svg) {
         const layoutName = prompt(`Enter a name for this ${type === 'designer' ? 'designer' : 'admin/grid'} layout:`);
         if (!layoutName)
@@ -46,9 +44,7 @@
         updateSavedLayoutsDropdown();
         alert(`${type === 'designer' ? 'Designer' : 'Admin/Grid'} layout saved!`);
     }
-    /**
-     * Populate the dropdown with all saved layouts (grid and designer).
-     */
+    // Update the dropdown with saved layouts from localStorage
     function updateSavedLayoutsDropdown() {
         savedLayoutsDropdown.innerHTML = '<option value="">Select Saved Layout</option>';
         for (let i = 0; i < localStorage.length; i++) {
@@ -62,7 +58,7 @@
             }
         }
     }
-    // --- Role Toggle ---
+    //  Role Toggle 
     roleSelect.addEventListener('change', () => {
         if (roleSelect.value === 'admin') {
             adminPanel.style.display = 'block';
@@ -73,7 +69,7 @@
             userPanel.style.display = 'block';
         }
     });
-    // --- Admin/Grid Seat Creation ---
+    //  Admin/Grid Seat Creation 
     createSeatsBtn.addEventListener('click', () => {
         seatMapType = 'grid';
         const rows = parseInt(rowInput.value);
@@ -84,9 +80,7 @@
         generateSVGSeats(rows, cols, seatSize);
         updateUI();
     });
-    /**
-     * Generate SVG seat grid with seat IDs inside.
-     */
+    //  Generate SVG Seats 
     function generateSVGSeats(rows, cols, seatSize) {
         const gap = 10;
         const totalWidth = cols * (seatSize + gap);
@@ -114,7 +108,7 @@
             }
         }
     }
-    // --- SVG Upload ---
+    //  SVG Upload 
     svgUpload.addEventListener('change', function (event) {
         seatMapType = 'svg';
         const input = event.target;
@@ -146,9 +140,9 @@
         };
         reader.readAsText(file);
     });
-    // --- Save Layouts ---
-    saveLayoutBtn.addEventListener('click', () => saveLayout('grid', seatSVG));
-    // --- Load Layouts ---
+    //  Save Layouts 
+    saveLayoutBtn.addEventListener('click', () => saveLayout('designer', seatSVG));
+    //  Load Layouts 
     loadLayoutBtn.addEventListener('click', () => {
         seatMapType = 'svg';
         const key = savedLayoutsDropdown.value;
@@ -186,7 +180,7 @@
         }
     });
     updateSavedLayoutsDropdown();
-    // --- Seat Selection Logic ---
+    //  Seat Selection Logic 
     function attachSVGSeatListeners() {
         const seatRects = seatSVG.querySelectorAll('rect');
         seatRects.forEach((rect, idx) => {
@@ -222,7 +216,7 @@
             }
         });
     }
-    // --- Seat Selection Limit ---
+    //  Seat Selection Limit 
     function promptForSeatCount() {
         const input = prompt("How many seats do you want to select?");
         if (!input) {
@@ -242,7 +236,7 @@
         alert(`You can now select up to ${maxSelectableSeats} seats.`);
         return true;
     }
-    // --- Toggle SVG Seat Selection ---
+    //  Toggle SVG Seat Selection 
     function toggleSVGSeat(seatId, rect) {
         if (maxSelectableSeats === null) {
             if (!promptForSeatCount())
@@ -262,7 +256,7 @@
         }
         updateUI();
     }
-    // --- Booking Confirmation ---
+    //  Booking Confirmation 
     confirmBtn.addEventListener('click', () => {
         if (selectedSeats.size === 0) {
             alert("No seats selected.");
@@ -299,7 +293,7 @@
         maxSelectableSeats = null; // Reset for next booking
         updateUI();
     });
-    // --- Reset Selection Button ---
+    //  Reset Selection Button 
     const resetBtn = document.createElement('button');
     resetBtn.textContent = "Reset Selection";
     resetBtn.onclick = () => {
@@ -309,7 +303,7 @@
         alert("Selection reset. Please select how many seats you want again.");
     };
     userPanel.appendChild(resetBtn);
-    // --- UI Update ---
+    //  UI Update 
     function updateUI() {
         // Update selected and total displays
         selectedDisplay.textContent = `Selected Seats: ${[...selectedSeats].join(', ') || 'None'}`;
@@ -332,10 +326,27 @@
             });
         }
     }
-    // --- Designer Logic ---
+    let addMode = false;
+    //  Designer Logic 
     if (designerSVG) {
-        // Add seat on click in designer SVG
+        // Toggle add mode when clicking the Add Seat button
+        addSeatBtn.addEventListener('click', () => {
+            addMode = !addMode;
+            addSeatBtn.textContent = addMode ? "Adding... (Click SVG)" : "Add Seat";
+            addSeatBtn.style.background = addMode ? "#4caf50" : "";
+        });
+        // Add seat on click in designer SVG only if addMode is true
         designerSVG.addEventListener('click', (e) => {
+            if (!addMode) {
+                // Deselect seat if not in add mode
+                if (e.target === designerSVG) {
+                    if (selectedDesignerSeat)
+                        selectedDesignerSeat.setAttribute('stroke', '#222');
+                    selectedDesignerSeat = null;
+                    seatIdInput.value = '';
+                }
+                return;
+            }
             if (e.target !== designerSVG)
                 return;
             const rect = document.createElementNS(svgNS, 'rect');

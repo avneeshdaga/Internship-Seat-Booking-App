@@ -6,7 +6,7 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      padding: 50px;
+      padding: 40px;
       text-align: center;
     }
     svg {
@@ -36,11 +36,11 @@
     <!-- Layout Management Section -->
     <fieldset>
       <legend>Layout Management</legend>
-      <button id="saveLayoutBtn">Save Current Grid Layout</button>
+      <input id="svgUpload" type="file" accept=".svg">
+      <button id="saveUploadedLayoutBtn" type="button">Save Uploaded Layout</button>
       <select id="savedLayoutsDropdown"></select>
       <button id="loadLayoutBtn">Load Selected Layout</button>
       <button id="deleteLayoutBtn">Delete Selected Layout</button>
-      <input id="svgUpload" type="file" accept=".svg">
     </fieldset>
 
     <!-- Visual Designer Section -->
@@ -52,6 +52,7 @@
       <button id="updateSeatIdBtn">Update Seat ID</button>
       <br>
       <svg id="designerSVG" width="600" height="300" style="border:1px solid #888; background:#f8f8f8; margin-top:10px;"></svg>
+      <button id="saveDesignerLayoutBtn" type="button">Save Designer Layout</button>
     </fieldset>
 
     <!-- Grid Layout Section -->
@@ -61,6 +62,7 @@
       <label>Columns: <input id="colInput" type="number" min="1" value="8"></label>
       <label>Seat Size: <input id="seatSizeInput" type="number" min="10" value="30"></label>
       <button id="createSeatsBtn">Create Grid</button>
+      <button id="saveLayoutBtn">Save Current Grid Layout</button>
     </fieldset>
   </div>
 

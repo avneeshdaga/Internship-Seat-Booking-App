@@ -8,55 +8,42 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     return to.concat(ar || Array.prototype.slice.call(from));
 };
 (function () {
+    // --- Constants & State ---
     var svgNS = "http://www.w3.org/2000/svg";
     var pricePerSeat = 200;
     var selectedSeats = new Set();
     var occupiedSeats = new Set();
-    var seatMapType = 'grid'; // 'grid' or 'svg'
-    var lastSVGString = ''; // Store last uploaded/loaded SVG string
+    var seatMapType = 'grid';
+    var lastSVGString = '';
     var maxSelectableSeats = null;
+    var designerSeats = [];
+    var selectedDesignerSeat = null;
+    var addMode = false;
     // --- DOM Elements ---
     var roleSelect = document.getElementById('roleSelect');
     var adminPanel = document.getElementById('adminPanel');
     var userPanel = document.getElementById('userPanel');
     var rowInput = document.getElementById('rowInput');
     var colInput = document.getElementById('colInput');
+    var seatSizeInput = document.getElementById('seatSizeInput');
     var createSeatsBtn = document.getElementById('createSeatsBtn');
     var seatSVG = document.getElementById('seatSVG');
     var selectedDisplay = document.getElementById('selected');
     var totalDisplay = document.getElementById('total');
     var confirmBtn = document.getElementById('confirmBtn');
     var svgUpload = document.getElementById('svgUpload');
-    var saveLayoutBtn = document.getElementById('saveLayoutBtn');
     var savedLayoutsDropdown = document.getElementById('savedLayoutsDropdown');
     var loadLayoutBtn = document.getElementById('loadLayoutBtn');
-    var seatSizeInput = document.getElementById('seatSizeInput');
     var deleteLayoutBtn = document.getElementById('deleteLayoutBtn');
-    // --- Designer Elements ---
-    var designerSVGElement = document.getElementById('designerSVG');
-    var designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
     var addSeatBtn = document.getElementById('addSeatBtn');
     var deleteSeatBtn = document.getElementById('deleteSeatBtn');
     var seatIdInput = document.getElementById('seatIdInput');
     var updateSeatIdBtn = document.getElementById('updateSeatIdBtn');
-    var designerSeats = [];
-    var selectedDesignerSeat = null;
+    var saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn');
+    var saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn');
+    var designerSVGElement = document.getElementById('designerSVG');
+    var designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
     // --- Utility Functions ---
-    /**
-     * Save a layout (grid or designer) to localStorage with a unique key.
-     */
-    function saveLayout(type, svg) {
-        var layoutName = prompt("Enter a name for this ".concat(type === 'designer' ? 'designer' : 'admin/grid', " layout:"));
-        if (!layoutName)
-            return;
-        var key = (type === 'designer' ? 'designerLayout_' : 'seatLayout_') + layoutName;
-        localStorage.setItem(key, svg.outerHTML);
-        updateSavedLayoutsDropdown();
-        alert("".concat(type === 'designer' ? 'Designer' : 'Admin/Grid', " layout saved!"));
-    }
-    /**
-     * Populate the dropdown with all saved layouts (grid and designer).
-     */
     function updateSavedLayoutsDropdown() {
         savedLayoutsDropdown.innerHTML = '<option value="">Select Saved Layout</option>';
         for (var i = 0; i < localStorage.length; i++) {
@@ -70,6 +57,26 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         }
     }
+    function updateUI() {
+        selectedDisplay.textContent = "Selected Seats: ".concat(__spreadArray([], selectedSeats, true).join(', ') || 'None');
+        totalDisplay.textContent = "Total: \u20B9".concat(selectedSeats.size * pricePerSeat);
+        if (seatMapType === 'svg') {
+            var seatRects = seatSVG.querySelectorAll('rect');
+            seatRects.forEach(function (rect, idx) {
+                var seatRect = rect;
+                var seatId = seatRect.getAttribute('data-seat-id') || "".concat(idx);
+                if (occupiedSeats.has(seatId)) {
+                    seatRect.setAttribute('fill', '#d32f2f');
+                }
+                else if (selectedSeats.has(seatId)) {
+                    seatRect.setAttribute('fill', '#4caf50');
+                }
+                else if (seatRect.getAttribute('width') && seatRect.getAttribute('height') && parseFloat(seatRect.getAttribute('width') || "0") < 50 && parseFloat(seatRect.getAttribute('height') || "0") < 50) {
+                    seatRect.setAttribute('fill', '#e0e0e0');
+                }
+            });
+        }
+    }
     // --- Role Toggle ---
     roleSelect.addEventListener('change', function () {
         if (roleSelect.value === 'admin') {
@@ -81,20 +88,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             userPanel.style.display = 'block';
         }
     });
-    // --- Admin/Grid Seat Creation ---
-    createSeatsBtn.addEventListener('click', function () {
-        seatMapType = 'grid';
-        var rows = parseInt(rowInput.value);
-        var cols = parseInt(colInput.value);
-        var seatSize = parseInt(seatSizeInput.value);
-        selectedSeats.clear();
-        seatSVG.innerHTML = '';
-        generateSVGSeats(rows, cols, seatSize);
-        updateUI();
-    });
-    /**
-     * Generate SVG seat grid with seat IDs inside.
-     */
+    // --- Grid Logic ---
     function generateSVGSeats(rows, cols, seatSize) {
         var gap = 10;
         var totalWidth = cols * (seatSize + gap);
@@ -102,10 +96,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         seatSVG.setAttribute("viewBox", "0 0 ".concat(totalWidth, " ").concat(totalHeight));
         for (var r = 0; r < rows; r++) {
             var _loop_1 = function (c) {
-                var seatId = String.fromCharCode(65 + r) + (c + 1); // A1, A2, B1, etc.
+                var seatId = String.fromCharCode(65 + r) + (c + 1);
                 var x = c * (seatSize + gap);
                 var y = r * (seatSize + gap);
-                // Seat Rectangle
                 var rect = document.createElementNS(svgNS, 'rect');
                 rect.setAttribute('x', x.toString());
                 rect.setAttribute('y', y.toString());
@@ -125,7 +118,17 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         }
     }
-    // --- SVG Upload ---
+    createSeatsBtn.addEventListener('click', function () {
+        seatMapType = 'grid';
+        var rows = parseInt(rowInput.value);
+        var cols = parseInt(colInput.value);
+        var seatSize = parseInt(seatSizeInput.value);
+        selectedSeats.clear();
+        seatSVG.innerHTML = '';
+        generateSVGSeats(rows, cols, seatSize);
+        updateUI();
+    });
+    // --- SVG Upload Logic ---
     svgUpload.addEventListener('change', function (event) {
         seatMapType = 'svg';
         var input = event.target;
@@ -140,7 +143,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var parser = new DOMParser();
             var svgDoc = parser.parseFromString(lastSVGString, "image/svg+xml");
             var importedSVG = svgDoc.documentElement;
-            // Copy SVG attributes for proper display
             ['width', 'height', 'viewBox'].forEach(function (attr) {
                 if (importedSVG.hasAttribute(attr)) {
                     seatSVG.setAttribute(attr, importedSVG.getAttribute(attr) || "");
@@ -149,28 +151,22 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                     seatSVG.removeAttribute(attr);
                 }
             });
-            // Import all children of the uploaded SVG into #seatSVG
             seatSVG.innerHTML = importedSVG.innerHTML;
-            // Attach seat selection logic to each rect
             attachSVGSeatListeners();
             updateUI();
         };
         reader.readAsText(file);
     });
-    // --- Save Layouts ---
-    saveLayoutBtn.addEventListener('click', function () { return saveLayout('grid', seatSVG); });
-    // --- Load Layouts ---
+    // --- Layout Management ---
     loadLayoutBtn.addEventListener('click', function () {
         seatMapType = 'svg';
         var key = savedLayoutsDropdown.value;
         if (!key)
             return;
         lastSVGString = localStorage.getItem(key) || "";
-        // Parse the SVG string and insert it into seatSVG
         var parser = new DOMParser();
         var svgDoc = parser.parseFromString(lastSVGString, "image/svg+xml");
         var importedSVG = svgDoc.documentElement;
-        // Copy SVG attributes for proper display
         ['width', 'height', 'viewBox'].forEach(function (attr) {
             if (importedSVG.hasAttribute(attr)) {
                 seatSVG.setAttribute(attr, importedSVG.getAttribute(attr) || "");
@@ -180,7 +176,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         });
         seatSVG.innerHTML = importedSVG.innerHTML;
-        // Attach seat selection logic to each rect
         attachSVGSeatListeners();
         updateUI();
     });
@@ -196,6 +191,38 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             alert('Layout deleted!');
         }
     });
+    if (saveDesignerLayoutBtn) {
+        saveDesignerLayoutBtn.addEventListener('click', function () {
+            var layoutName = prompt("Enter a name for this designer layout:");
+            if (!layoutName)
+                return;
+            var key = "designerLayout_".concat(layoutName);
+            if (designerSVG && designerSVG.querySelectorAll('rect').length > 0) {
+                localStorage.setItem(key, designerSVG.outerHTML);
+                updateSavedLayoutsDropdown();
+                alert('Designer layout saved!');
+            }
+            else {
+                alert('No seats in designer to save!');
+            }
+        });
+    }
+    if (saveUploadedLayoutBtn) {
+        saveUploadedLayoutBtn.addEventListener('click', function () {
+            var layoutName = prompt("Enter a name for this uploaded layout:");
+            if (!layoutName)
+                return;
+            var key = "designerLayout_".concat(layoutName);
+            if (seatSVG && seatSVG.querySelectorAll('rect').length > 0) {
+                localStorage.setItem(key, seatSVG.outerHTML);
+                updateSavedLayoutsDropdown();
+                alert('Uploaded SVG layout saved!');
+            }
+            else {
+                alert('No uploaded SVG seats to save!');
+            }
+        });
+    }
     updateSavedLayoutsDropdown();
     // --- Seat Selection Logic ---
     function attachSVGSeatListeners() {
@@ -205,7 +232,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var seatId = seatRect.getAttribute('data-seat-id') || "".concat(idx);
             var width = parseFloat(seatRect.getAttribute('width') || "0");
             var height = parseFloat(seatRect.getAttribute('height') || "0");
-            // Try to get x/y from attributes, fallback to getBBox if missing
             var x = seatRect.hasAttribute('x') ? parseFloat(seatRect.getAttribute('x') || "0") : undefined;
             var y = seatRect.hasAttribute('y') ? parseFloat(seatRect.getAttribute('y') || "0") : undefined;
             if (x === undefined || y === undefined) {
@@ -213,7 +239,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 x = bbox.x;
                 y = bbox.y;
             }
-            // Skip rectangles at (0,0) with no data-seat-id or with width/height 0
             if ((x === 0 && y === 0 && !seatRect.hasAttribute('data-seat-id')) || width === 0 || height === 0) {
                 return;
             }
@@ -233,7 +258,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         });
     }
-    // --- Seat Selection Limit ---
     function promptForSeatCount() {
         var input = prompt("How many seats do you want to select?");
         if (!input) {
@@ -253,7 +277,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         alert("You can now select up to ".concat(maxSelectableSeats, " seats."));
         return true;
     }
-    // --- Toggle SVG Seat Selection ---
     function toggleSVGSeat(seatId, rect) {
         if (maxSelectableSeats === null) {
             if (!promptForSeatCount())
@@ -273,7 +296,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         }
         updateUI();
     }
-    // --- Booking Confirmation ---
+    // --- Booking Logic ---
     confirmBtn.addEventListener('click', function () {
         if (selectedSeats.size === 0) {
             alert("No seats selected.");
@@ -291,7 +314,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             generateSVGSeats(parseInt(rowInput.value), parseInt(colInput.value), parseInt(seatSizeInput.value));
         }
         else if (seatMapType === 'svg') {
-            // Re-parse and redraw the last SVG
             var parser = new DOMParser();
             var svgDoc = parser.parseFromString(lastSVGString, "image/svg+xml");
             var importedSVG_1 = svgDoc.documentElement;
@@ -304,10 +326,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 }
             });
             seatSVG.innerHTML = importedSVG_1.innerHTML;
-            // Re-attach event listeners
             attachSVGSeatListeners();
         }
-        maxSelectableSeats = null; // Reset for next booking
+        maxSelectableSeats = null;
         updateUI();
     });
     // --- Reset Selection Button ---
@@ -320,33 +341,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         alert("Selection reset. Please select how many seats you want again.");
     };
     userPanel.appendChild(resetBtn);
-    // --- UI Update ---
-    function updateUI() {
-        // Update selected and total displays
-        selectedDisplay.textContent = "Selected Seats: ".concat(__spreadArray([], selectedSeats, true).join(', ') || 'None');
-        totalDisplay.textContent = "Total: \u20B9".concat(selectedSeats.size * pricePerSeat);
-        // Optionally, update seat colors for SVG seats (in case of external changes)
-        if (seatMapType === 'svg') {
-            var seatRects = seatSVG.querySelectorAll('rect');
-            seatRects.forEach(function (rect, idx) {
-                var seatRect = rect;
-                var seatId = seatRect.getAttribute('data-seat-id') || "".concat(idx);
-                if (occupiedSeats.has(seatId)) {
-                    seatRect.setAttribute('fill', '#d32f2f');
-                }
-                else if (selectedSeats.has(seatId)) {
-                    seatRect.setAttribute('fill', '#4caf50');
-                }
-                else if (seatRect.getAttribute('width') && seatRect.getAttribute('height') && parseFloat(seatRect.getAttribute('width') || "0") < 50 && parseFloat(seatRect.getAttribute('height') || "0") < 50) {
-                    seatRect.setAttribute('fill', '#e0e0e0');
-                }
-            });
-        }
-    }
     // --- Designer Logic ---
     if (designerSVG) {
-        // Add seat on click in designer SVG
+        addSeatBtn.addEventListener('click', function () {
+            addMode = !addMode;
+            addSeatBtn.textContent = addMode ? "Adding... (Click SVG)" : "Add Seat";
+            addSeatBtn.style.background = addMode ? "#4caf50" : "";
+        });
         designerSVG.addEventListener('click', function (e) {
+            if (!addMode) {
+                if (e.target === designerSVG) {
+                    if (selectedDesignerSeat)
+                        selectedDesignerSeat.setAttribute('stroke', '#222');
+                    selectedDesignerSeat = null;
+                    seatIdInput.value = '';
+                }
+                return;
+            }
             if (e.target !== designerSVG)
                 return;
             var rect = document.createElementNS(svgNS, 'rect');
@@ -366,17 +377,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             designerSeats.push(rect);
             selectDesignerSeat(rect);
         });
-        // Deselect seat when clicking empty SVG area
-        designerSVG.addEventListener('click', function (e) {
-            if (e.target === designerSVG) {
-                if (selectedDesignerSeat)
-                    selectedDesignerSeat.setAttribute('stroke', '#222');
-                selectedDesignerSeat = null;
-                seatIdInput.value = '';
-            }
-        });
     }
-    // Select a designer seat
     function selectDesignerSeat(rect) {
         if (selectedDesignerSeat) {
             selectedDesignerSeat.setAttribute('stroke', '#222');
@@ -385,13 +386,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         rect.setAttribute('stroke', '#f00');
         seatIdInput.value = rect.getAttribute('data-seat-id') || '';
     }
-    // Update seat ID in designer
     updateSeatIdBtn.addEventListener('click', function () {
         if (selectedDesignerSeat) {
             selectedDesignerSeat.setAttribute('data-seat-id', seatIdInput.value);
         }
     });
-    // Delete selected seat in designer
     deleteSeatBtn.addEventListener('click', function () {
         if (selectedDesignerSeat && designerSVG) {
             designerSVG.removeChild(selectedDesignerSeat);
@@ -400,4 +399,4 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             seatIdInput.value = '';
         }
     });
-})(); // End IIFE
+})();
