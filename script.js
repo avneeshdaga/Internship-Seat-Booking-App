@@ -26,7 +26,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var totalDisplay = document.getElementById('total');
     var confirmBtn = document.getElementById('confirmBtn');
     var svgUpload = document.getElementById('svgUpload');
-    var saveLayoutBtn = document.getElementById('saveLayoutBtn');
     var savedLayoutsDropdown = document.getElementById('savedLayoutsDropdown');
     var loadLayoutBtn = document.getElementById('loadLayoutBtn');
     var seatSizeInput = document.getElementById('seatSizeInput');
@@ -120,10 +119,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         reader.readAsText(file);
     });
     // Save current SVG layout
-    saveLayoutBtn.addEventListener('click', function () {
+    saveLayoutBtn.addEventListener('click', () => {
         var layoutName = prompt("Enter a name for this layout:");
-        if (!layoutName)
-            return;
+        if (!layoutName) return;
         localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
         updateSavedLayoutsDropdown();
         alert('Layout saved!');
@@ -133,8 +131,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         savedLayoutsDropdown.innerHTML = '<option value="">Select Saved Layout</option>';
         for (var i = 0; i < localStorage.length; i++) {
             var key = localStorage.key(i);
-            if (key && key.startsWith('seatLayout_')) {
-                var name_1 = key.replace('seatLayout_', '');
+            if (key && (key.startsWith('seatLayout_') || key.startsWith('designerLayout_'))) {
+                var name_1 = key.replace('seatLayout_', '').replace('designerLayout_', '[Designer] ');
                 var option = document.createElement('option');
                 option.value = key;
                 option.textContent = name_1;

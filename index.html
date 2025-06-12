@@ -43,7 +43,17 @@
     <label>Seat Size: <input type="number" id="seatSizeInput" value="10" min="5"></label>
     <label>Rows: <input type="number" id="rowInput" value="5" min="1"></label>
     <label>Cols: <input type="number" id="colInput" value="5" min="1"></label>
-    <button id="createSeatsBtn">Create Seats</button>
+    <button id="createSeatsBtn">Create Seats</button></br>
+    <h3>Admin Seat Designer</h3>
+    <div>
+      <button id="addSeatBtn">Add Seat</button>
+      <button id="deleteSeatBtn">Delete Selected</button>
+      <button id="designerSaveBtn">Save Designer Layout</button>
+    </div>
+    <svg id="designerSVG" width="700" height="400" style="border:1px solid #888; background:#eee; margin-top:10px;"></svg>
+    <div id="seatProperties" style="margin-top:10px;">
+      <label>Seat ID: <input id="seatIdInput" type="text"></label>
+      <button id="updateSeatIdBtn">Update Seat ID</button>
   </div>
 
   <!-- User Panel -->
