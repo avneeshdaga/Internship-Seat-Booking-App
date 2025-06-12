@@ -6,7 +6,7 @@
   <style>
     body {
       font-family: Arial, sans-serif;
-      padding: 100px;
+      padding: 50px;
       text-align: center;
     }
     svg {
@@ -23,46 +23,58 @@
 
   <h1>Seat Booking</h1>
 
-  <!-- Role Selection -->
-  <label for="roleSelect">Select Role:</label>
+  <!-- Admin/User Role Switch -->
   <select id="roleSelect">
-    <option value="user">User</option>
     <option value="admin">Admin</option>
+    <option value="user">User</option>
   </select>
 
-  <!-- Admin Panel -->
-  <div id="adminPanel" style="display: none;">
+  <!-- Admin Panel: Both Grid and Designer Controls -->
+  <div id="adminPanel">
     <h2>Admin Panel</h2>
-    <input type="file" id="svgUpload" accept=".svg">
-    <button id="saveLayoutBtn">Save Current Layout</button>
-    <select id="savedLayoutsDropdown">
-      <option value="">Select Saved Layout</option>
-    </select>
-    <button id="loadLayoutBtn">Load Selected Layout</button>
-    <button id="deleteLayoutBtn">Delete Selected Layout</button></br></br>
-    <label>Seat Size: <input type="number" id="seatSizeInput" value="10" min="5"></label>
-    <label>Rows: <input type="number" id="rowInput" value="5" min="1"></label>
-    <label>Cols: <input type="number" id="colInput" value="5" min="1"></label>
-    <button id="createSeatsBtn">Create Seats</button></br>
-    <h3>Admin Seat Designer</h3>
-    <div>
+
+    <!-- Grid Layout Section -->
+    <fieldset style="margin-bottom: 1em;">
+      <legend>Grid Layout</legend>
+      <label>Rows: <input id="rowInput" type="number" min="1" value="5"></label>
+      <label>Columns: <input id="colInput" type="number" min="1" value="8"></label>
+      <label>Seat Size: <input id="seatSizeInput" type="number" min="10" value="30"></label>
+      <button id="createSeatsBtn">Create Grid</button>
+    </fieldset>
+
+    <!-- Visual Designer Section -->
+    <fieldset style="margin-bottom: 1em;">
+      <legend>Design Layouts</legend>
       <button id="addSeatBtn">Add Seat</button>
-      <button id="deleteSeatBtn">Delete Selected</button>
-      <button id="designerSaveBtn">Save Designer Layout</button>
-    </div>
-    <svg id="designerSVG" width="700" height="400" style="border:1px solid #888; background:#eee; margin-top:10px;"></svg>
-    <div id="seatProperties" style="margin-top:10px;">
+      <button id="deleteSeatBtn">Delete Selected Seat</button>
       <label>Seat ID: <input id="seatIdInput" type="text"></label>
       <button id="updateSeatIdBtn">Update Seat ID</button>
+      <br>
+      <svg id="designerSVG" width="600" height="300" style="border:1px solid #888; background:#f8f8f8; margin-top:10px;"></svg>
+    </fieldset>
+
+    <!-- Layout Management Section -->
+    <fieldset>
+      <legend>Layout Management</legend>
+      <button id="saveLayoutBtn">Save Current Grid Layout</button>
+      <select id="savedLayoutsDropdown"></select>
+      <button id="loadLayoutBtn">Load Selected Layout</button>
+      <button id="deleteLayoutBtn">Delete Selected Layout</button>
+      <input id="svgUpload" type="file" accept=".svg">
+    </fieldset>
+
   </div>
 
-  <!-- User Panel -->
-  <div id="userPanel">
+  <!-- User Panel (hidden when admin is active) -->
+  <div id="userPanel" style="display:none;">
     <h2>User Panel</h2>
-    <svg id="seatSVG"></svg>
+    <!-- SVG Preview for Grid/Uploaded Layouts -->
+    <h3>Current Layout</h3>
+    <svg id="seatSVG" width="600" height="300" style="border:1px solid #888; background:#f8f8f8;"></svg>
     <p id="selected">Selected Seats: None</p>
     <p id="total">Total: ₹0</p>
     <button id="confirmBtn">Confirm Booking</button>
+    <!-- The seatSVG is reused for user selection -->
   </div>
 
   <script src="dist/script.js" defer></script>

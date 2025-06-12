@@ -7,6 +7,7 @@
     let seatMapType = 'grid'; // 'grid' or 'svg'
     let lastSVGString = ''; // Store last uploaded/loaded SVG string
     let maxSelectableSeats = null;
+    // --- DOM Elements ---
     const roleSelect = document.getElementById('roleSelect');
     const adminPanel = document.getElementById('adminPanel');
     const userPanel = document.getElementById('userPanel');
@@ -23,105 +24,32 @@
     const loadLayoutBtn = document.getElementById('loadLayoutBtn');
     const seatSizeInput = document.getElementById('seatSizeInput');
     const deleteLayoutBtn = document.getElementById('deleteLayoutBtn');
-    // Role toggle
-    roleSelect.addEventListener('change', () => {
-        if (roleSelect.value === 'admin') {
-            adminPanel.style.display = 'block';
-            userPanel.style.display = 'none';
-        }
-        else {
-            adminPanel.style.display = 'none';
-            userPanel.style.display = 'block';
-        }
-    });
-    // Attach seat selection logic to each rect in SVG
-    function attachSVGSeatListeners() {
-        const seatRects = seatSVG.querySelectorAll('rect');
-        seatRects.forEach((rect, idx) => {
-            const seatRect = rect;
-            const seatId = seatRect.getAttribute('data-seat-id') || `${idx}`;
-            const width = parseFloat(seatRect.getAttribute('width') || "0");
-            const height = parseFloat(seatRect.getAttribute('height') || "0");
-            // Try to get x/y from attributes, fallback to getBBox if missing
-            let x = seatRect.hasAttribute('x') ? parseFloat(seatRect.getAttribute('x') || "0") : undefined;
-            let y = seatRect.hasAttribute('y') ? parseFloat(seatRect.getAttribute('y') || "0") : undefined;
-            if (x === undefined || y === undefined) {
-                const bbox = seatRect.getBBox();
-                x = bbox.x;
-                y = bbox.y;
-            }
-            // Skip rectangles at (0,0) with no data-seat-id or with width/height 0
-            if ((x === 0 && y === 0 && !seatRect.hasAttribute('data-seat-id')) || width === 0 || height === 0) {
-                return;
-            }
-            if (width < 50 && height < 50) {
-                seatRect.style.cursor = 'pointer';
-                if (!occupiedSeats.has(seatId)) {
-                    seatRect.setAttribute('fill', '#e0e0e0');
-                    seatRect.addEventListener('click', () => {
-                        if (selectedSeats.has(seatId)) {
-                            selectedSeats.delete(seatId);
-                            seatRect.setAttribute('fill', '#e0e0e0');
-                        }
-                        else {
-                            selectedSeats.add(seatId);
-                            seatRect.setAttribute('fill', '#4caf50');
-                        }
-                        updateUI();
-                    });
-                }
-                else {
-                    seatRect.setAttribute('fill', '#d32f2f');
-                }
-            }
-            else {
-                seatRect.setAttribute('fill', '#bdbdbd');
-                seatRect.style.cursor = 'default';
-            }
-        });
-    }
-    svgUpload.addEventListener('change', function (event) {
-        seatMapType = 'svg';
-        const input = event.target;
-        const file = input.files && input.files[0];
-        if (!file)
-            return;
-        const SIZE_THRESHOLD = 50;
-        const reader = new FileReader();
-        reader.onload = function (e) {
-            var _a;
-            seatSVG.innerHTML = '';
-            lastSVGString = (_a = e.target) === null || _a === void 0 ? void 0 : _a.result;
-            const parser = new DOMParser();
-            const svgDoc = parser.parseFromString(lastSVGString, "image/svg+xml");
-            const importedSVG = svgDoc.documentElement;
-            // Copy SVG attributes for proper display
-            ['width', 'height', 'viewBox'].forEach(attr => {
-                if (importedSVG.hasAttribute(attr)) {
-                    seatSVG.setAttribute(attr, importedSVG.getAttribute(attr) || "");
-                }
-                else {
-                    seatSVG.removeAttribute(attr);
-                }
-            });
-            // Import all children of the uploaded SVG into #seatSVG
-            seatSVG.innerHTML = importedSVG.innerHTML;
-            // Attach seat selection logic to each rect
-            attachSVGSeatListeners();
-            updateUI();
-        };
-        reader.readAsText(file);
-    });
-    // Save current SVG layout
-    saveLayoutBtn.addEventListener('click', () => {
-        const layoutName = prompt("Enter a name for this layout:");
+    // --- Designer Elements ---
+    const designerSVGElement = document.getElementById('designerSVG');
+    const designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
+    const designerSaveBtn = document.getElementById('designerSaveBtn');
+    const addSeatBtn = document.getElementById('addSeatBtn');
+    const deleteSeatBtn = document.getElementById('deleteSeatBtn');
+    const seatIdInput = document.getElementById('seatIdInput');
+    const updateSeatIdBtn = document.getElementById('updateSeatIdBtn');
+    let designerSeats = [];
+    let selectedDesignerSeat = null;
+    // --- Utility Functions ---
+    /**
+     * Save a layout (grid or designer) to localStorage with a unique key.
+     */
+    function saveLayout(type, svg) {
+        const layoutName = prompt(`Enter a name for this ${type === 'designer' ? 'designer' : 'admin/grid'} layout:`);
         if (!layoutName)
             return;
-        localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
+        const key = (type === 'designer' ? 'designerLayout_' : 'seatLayout_') + layoutName;
+        localStorage.setItem(key, svg.outerHTML);
         updateSavedLayoutsDropdown();
-        alert('Layout saved!');
-    });
-    // Populate dropdown with saved layouts
+        alert(`${type === 'designer' ? 'Designer' : 'Admin/Grid'} layout saved!`);
+    }
+    /**
+     * Populate the dropdown with all saved layouts (grid and designer).
+     */
     function updateSavedLayoutsDropdown() {
         savedLayoutsDropdown.innerHTML = '<option value="">Select Saved Layout</option>';
         for (let i = 0; i < localStorage.length; i++) {
@@ -135,33 +63,18 @@
             }
         }
     }
-    // Load selected layout
-    loadLayoutBtn.addEventListener('click', () => {
-        seatMapType = 'svg';
-        const key = savedLayoutsDropdown.value;
-        if (!key)
-            return;
-        lastSVGString = localStorage.getItem(key) || "";
-        // Parse the SVG string and insert it into seatSVG
-        const parser = new DOMParser();
-        const svgDoc = parser.parseFromString(lastSVGString, "image/svg+xml");
-        const importedSVG = svgDoc.documentElement;
-        // Copy SVG attributes for proper display
-        ['width', 'height', 'viewBox'].forEach(attr => {
-            if (importedSVG.hasAttribute(attr)) {
-                seatSVG.setAttribute(attr, importedSVG.getAttribute(attr) || "");
-            }
-            else {
-                seatSVG.removeAttribute(attr);
-            }
-        });
-        seatSVG.innerHTML = importedSVG.innerHTML;
-        // Attach seat selection logic to each rect
-        attachSVGSeatListeners();
-        updateUI();
+    // --- Role Toggle ---
+    roleSelect.addEventListener('change', () => {
+        if (roleSelect.value === 'admin') {
+            adminPanel.style.display = 'block';
+            userPanel.style.display = 'none';
+        }
+        else {
+            adminPanel.style.display = 'none';
+            userPanel.style.display = 'block';
+        }
     });
-    updateSavedLayoutsDropdown();
-    // Admin creates seats
+    // --- Admin/Grid Seat Creation ---
     createSeatsBtn.addEventListener('click', () => {
         seatMapType = 'grid';
         const rows = parseInt(rowInput.value);
@@ -172,7 +85,9 @@
         generateSVGSeats(rows, cols, seatSize);
         updateUI();
     });
-    // Generate SVG seat grid with seat IDs inside
+    /**
+     * Generate SVG seat grid with seat IDs inside.
+     */
     function generateSVGSeats(rows, cols, seatSize) {
         const gap = 10;
         const totalWidth = cols * (seatSize + gap);
@@ -200,6 +115,71 @@
             }
         }
     }
+    // --- SVG Upload ---
+    svgUpload.addEventListener('change', function (event) {
+        seatMapType = 'svg';
+        const input = event.target;
+        const file = input.files && input.files[0];
+        if (!file)
+            return;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+            var _a;
+            seatSVG.innerHTML = '';
+            lastSVGString = (_a = e.target) === null || _a === void 0 ? void 0 : _a.result;
+            const parser = new DOMParser();
+            const svgDoc = parser.parseFromString(lastSVGString, "image/svg+xml");
+            const importedSVG = svgDoc.documentElement;
+            // Copy SVG attributes for proper display
+            ['width', 'height', 'viewBox'].forEach(attr => {
+                if (importedSVG.hasAttribute(attr)) {
+                    seatSVG.setAttribute(attr, importedSVG.getAttribute(attr) || "");
+                }
+                else {
+                    seatSVG.removeAttribute(attr);
+                }
+            });
+            // Import all children of the uploaded SVG into #seatSVG
+            seatSVG.innerHTML = importedSVG.innerHTML;
+            // Attach seat selection logic to each rect
+            attachSVGSeatListeners();
+            updateUI();
+        };
+        reader.readAsText(file);
+    });
+    // --- Save Layouts ---
+    saveLayoutBtn.addEventListener('click', () => saveLayout('grid', seatSVG));
+    designerSaveBtn.addEventListener('click', () => {
+        if (designerSVG)
+            saveLayout('designer', designerSVG);
+        else
+            alert('SVG designer is not available.');
+    });
+    // --- Load Layouts ---
+    loadLayoutBtn.addEventListener('click', () => {
+        seatMapType = 'svg';
+        const key = savedLayoutsDropdown.value;
+        if (!key)
+            return;
+        lastSVGString = localStorage.getItem(key) || "";
+        // Parse the SVG string and insert it into seatSVG
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(lastSVGString, "image/svg+xml");
+        const importedSVG = svgDoc.documentElement;
+        // Copy SVG attributes for proper display
+        ['width', 'height', 'viewBox'].forEach(attr => {
+            if (importedSVG.hasAttribute(attr)) {
+                seatSVG.setAttribute(attr, importedSVG.getAttribute(attr) || "");
+            }
+            else {
+                seatSVG.removeAttribute(attr);
+            }
+        });
+        seatSVG.innerHTML = importedSVG.innerHTML;
+        // Attach seat selection logic to each rect
+        attachSVGSeatListeners();
+        updateUI();
+    });
     deleteLayoutBtn.addEventListener('click', () => {
         const key = savedLayoutsDropdown.value;
         if (!key) {
@@ -212,7 +192,44 @@
             alert('Layout deleted!');
         }
     });
-    // Ask user how many seats they want before allowing selection
+    updateSavedLayoutsDropdown();
+    // --- Seat Selection Logic ---
+    function attachSVGSeatListeners() {
+        const seatRects = seatSVG.querySelectorAll('rect');
+        seatRects.forEach((rect, idx) => {
+            const seatRect = rect;
+            const seatId = seatRect.getAttribute('data-seat-id') || `${idx}`;
+            const width = parseFloat(seatRect.getAttribute('width') || "0");
+            const height = parseFloat(seatRect.getAttribute('height') || "0");
+            // Try to get x/y from attributes, fallback to getBBox if missing
+            let x = seatRect.hasAttribute('x') ? parseFloat(seatRect.getAttribute('x') || "0") : undefined;
+            let y = seatRect.hasAttribute('y') ? parseFloat(seatRect.getAttribute('y') || "0") : undefined;
+            if (x === undefined || y === undefined) {
+                const bbox = seatRect.getBBox();
+                x = bbox.x;
+                y = bbox.y;
+            }
+            // Skip rectangles at (0,0) with no data-seat-id or with width/height 0
+            if ((x === 0 && y === 0 && !seatRect.hasAttribute('data-seat-id')) || width === 0 || height === 0) {
+                return;
+            }
+            if (width < 50 && height < 50) {
+                seatRect.style.cursor = 'pointer';
+                if (!occupiedSeats.has(seatId)) {
+                    seatRect.setAttribute('fill', '#e0e0e0');
+                    seatRect.addEventListener('click', () => toggleSVGSeat(seatId, seatRect));
+                }
+                else {
+                    seatRect.setAttribute('fill', '#d32f2f');
+                }
+            }
+            else {
+                seatRect.setAttribute('fill', '#bdbdbd');
+                seatRect.style.cursor = 'default';
+            }
+        });
+    }
+    // --- Seat Selection Limit ---
     function promptForSeatCount() {
         const input = prompt("How many seats do you want to select?");
         if (!input) {
@@ -232,7 +249,7 @@
         alert(`You can now select up to ${maxSelectableSeats} seats.`);
         return true;
     }
-    // Modify seat selection logic to enforce the limit
+    // --- Toggle SVG Seat Selection ---
     function toggleSVGSeat(seatId, rect) {
         if (maxSelectableSeats === null) {
             if (!promptForSeatCount())
@@ -252,7 +269,7 @@
         }
         updateUI();
     }
-    // reset maxSelectableSeats after booking is confirmed
+    // --- Booking Confirmation ---
     confirmBtn.addEventListener('click', () => {
         if (selectedSeats.size === 0) {
             alert("No seats selected.");
@@ -289,6 +306,7 @@
         maxSelectableSeats = null; // Reset for next booking
         updateUI();
     });
+    // --- Reset Selection Button ---
     const resetBtn = document.createElement('button');
     resetBtn.textContent = "Reset Selection";
     resetBtn.onclick = () => {
@@ -298,6 +316,7 @@
         alert("Selection reset. Please select how many seats you want again.");
     };
     userPanel.appendChild(resetBtn);
+    // --- UI Update ---
     function updateUI() {
         // Update selected and total displays
         selectedDisplay.textContent = `Selected Seats: ${[...selectedSeats].join(', ') || 'None'}`;
@@ -320,16 +339,9 @@
             });
         }
     }
-    const designerSVGElement = document.getElementById('designerSVG');
-    const designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
-    const addSeatBtn = document.getElementById('addSeatBtn');
-    const deleteSeatBtn = document.getElementById('deleteSeatBtn');
-    const seatIdInput = document.getElementById('seatIdInput');
-    const updateSeatIdBtn = document.getElementById('updateSeatIdBtn');
-    let designerSeats = [];
-    let selectedDesignerSeat = null;
-    // Add seat on click
+    // --- Designer Logic ---
     if (designerSVG) {
+        // Add seat on click in designer SVG
         designerSVG.addEventListener('click', (e) => {
             if (e.target !== designerSVG)
                 return;
@@ -350,32 +362,7 @@
             designerSeats.push(rect);
             selectDesignerSeat(rect);
         });
-    }
-    // Select seat
-    function selectDesignerSeat(rect) {
-        if (selectedDesignerSeat) {
-            selectedDesignerSeat.setAttribute('stroke', '#222');
-        }
-        selectedDesignerSeat = rect;
-        rect.setAttribute('stroke', '#f00');
-        seatIdInput.value = rect.getAttribute('data-seat-id') || '';
-    }
-    // Update seat ID
-    updateSeatIdBtn.addEventListener('click', () => {
-        if (selectedDesignerSeat) {
-            selectedDesignerSeat.setAttribute('data-seat-id', seatIdInput.value);
-        }
-    });
-    // Delete selected seat
-    deleteSeatBtn.addEventListener('click', () => {
-        if (selectedDesignerSeat && designerSVG) {
-            designerSVG.removeChild(selectedDesignerSeat);
-            designerSeats = designerSeats.filter(r => r !== selectedDesignerSeat);
-            selectedDesignerSeat = null;
-            seatIdInput.value = '';
-        }
-    });
-    if (designerSVG) {
+        // Deselect seat when clicking empty SVG area
         designerSVG.addEventListener('click', (e) => {
             if (e.target === designerSVG) {
                 if (selectedDesignerSeat)
@@ -385,22 +372,28 @@
             }
         });
     }
-    // End of previous IIFE block, remove this stray closing parenthesis
-    // Move the designerSaveBtn logic inside the main IIFE block
-    const designerSaveBtn = document.getElementById('designerSaveBtn');
-    //const selectedKey = savedLayoutsDropdown.value; 
-    savedLayoutsDropdown.addEventListener('change', () => { });
-    designerSaveBtn.addEventListener('click', () => {
-        const layoutName = prompt("Enter a name for this designer layout:");
-        if (!layoutName)
-            return;
-        if (designerSVG) {
-            localStorage.setItem('designerLayout_' + layoutName, designerSVG.outerHTML);
-            updateSavedLayoutsDropdown();
-            alert('Designer layout saved!');
+    // Select a designer seat
+    function selectDesignerSeat(rect) {
+        if (selectedDesignerSeat) {
+            selectedDesignerSeat.setAttribute('stroke', '#222');
         }
-        else {
-            alert('SVG designer is not available.');
+        selectedDesignerSeat = rect;
+        rect.setAttribute('stroke', '#f00');
+        seatIdInput.value = rect.getAttribute('data-seat-id') || '';
+    }
+    // Update seat ID in designer
+    updateSeatIdBtn.addEventListener('click', () => {
+        if (selectedDesignerSeat) {
+            selectedDesignerSeat.setAttribute('data-seat-id', seatIdInput.value);
+        }
+    });
+    // Delete selected seat in designer
+    deleteSeatBtn.addEventListener('click', () => {
+        if (selectedDesignerSeat && designerSVG) {
+            designerSVG.removeChild(selectedDesignerSeat);
+            designerSeats = designerSeats.filter(r => r !== selectedDesignerSeat);
+            selectedDesignerSeat = null;
+            seatIdInput.value = '';
         }
     });
 })(); // End IIFE
