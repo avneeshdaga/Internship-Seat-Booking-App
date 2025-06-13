@@ -267,7 +267,28 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         });
     }
     function promptForSeatCount() {
-        var input = prompt("How many seats do you want to select?");
+        // Count available seats (not occupied)
+        var availableSeats = 0;
+        if (seatMapType === 'svg') {
+            var seatRects = seatSVG.querySelectorAll('rect');
+            seatRects.forEach(function (rect) {
+                var seatId = rect.getAttribute('data-seat-id');
+                if (seatId && !occupiedSeats.has(seatId)) {
+                    availableSeats++;
+                }
+            });
+        }
+        else if (seatMapType === 'grid') {
+            // For grid, all seats are in seatSVG as well
+            var seatRects = seatSVG.querySelectorAll('rect');
+            seatRects.forEach(function (rect) {
+                var seatId = rect.getAttribute('data-seat-id');
+                if (seatId && !occupiedSeats.has(seatId)) {
+                    availableSeats++;
+                }
+            });
+        }
+        var input = prompt("How many seats do you want to select? (Available: ".concat(availableSeats, ")"));
         if (!input) {
             maxSelectableSeats = null;
             alert("Please enter a number to proceed.");
@@ -277,6 +298,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         if (isNaN(num) || num <= 0) {
             maxSelectableSeats = null;
             alert("Please enter a valid positive number.");
+            return false;
+        }
+        if (num > availableSeats) {
+            maxSelectableSeats = null;
+            alert("Only ".concat(availableSeats, " seats are available. Please enter a lower number."));
             return false;
         }
         maxSelectableSeats = num;

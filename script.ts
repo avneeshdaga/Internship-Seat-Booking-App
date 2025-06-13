@@ -269,7 +269,28 @@
   }
 
   function promptForSeatCount() {
-    const input = prompt("How many seats do you want to select?");
+    // Count available seats (not occupied)
+    let availableSeats = 0;
+    if (seatMapType === 'svg') {
+      const seatRects = seatSVG.querySelectorAll('rect');
+      seatRects.forEach(rect => {
+        const seatId = rect.getAttribute('data-seat-id');
+        if (seatId && !occupiedSeats.has(seatId)) {
+          availableSeats++;
+        }
+     });
+    } else if (seatMapType === 'grid') {
+      // For grid, all seats are in seatSVG as well
+      const seatRects = seatSVG.querySelectorAll('rect');
+      seatRects.forEach(rect => {
+        const seatId = rect.getAttribute('data-seat-id');
+        if (seatId && !occupiedSeats.has(seatId)) {
+          availableSeats++;
+        }
+      });
+    }
+
+    const input = prompt(`How many seats do you want to select? (Available: ${availableSeats})`);
     if (!input) {
       maxSelectableSeats = null;
       alert("Please enter a number to proceed.");
@@ -281,12 +302,17 @@
       alert("Please enter a valid positive number.");
       return false;
     }
+    if (num > availableSeats) {
+      maxSelectableSeats = null;
+      alert(`Only ${availableSeats} seats are available. Please enter a lower number.`);
+      return false;
+    }
     maxSelectableSeats = num;
     selectedSeats.clear();
     updateUI();
     alert(`You can now select up to ${maxSelectableSeats} seats.`);
     return true;
-  }
+ }
 
   function toggleSVGSeat(seatId: string, rect: SVGRectElement): void {
     if (maxSelectableSeats === null) {
