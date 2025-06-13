@@ -16,7 +16,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var seatMapType = 'grid';
     var lastSVGString = '';
     var maxSelectableSeats = null;
-    var designerSeats = [];
     var selectedDesignerSeat = null;
     var addMode = false;
     // --- DOM Elements ---
@@ -42,8 +41,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var updateSeatIdBtn = document.getElementById('updateSeatIdBtn');
     var saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn');
     var saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn');
-    var designerSVGElement = document.getElementById('designerSVG');
-    var designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
+    var designerSVG = document.getElementById('designerSVG');
     // --- Utility Functions ---
     function updateSavedLayoutsDropdown() {
         savedLayoutsDropdown.innerHTML = '<option value="">Select Saved Layout</option>';
@@ -79,34 +77,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         }
     }
     // Save current SVG layout
-    saveLayoutBtn.addEventListener('click', function () {
-        var layoutName = prompt("Enter a name for this layout:");
+    function saveLayout(svg, promptMsg, prefix) {
+        var layoutName = prompt(promptMsg);
         if (!layoutName)
             return;
-        localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
+        localStorage.setItem(prefix + layoutName, svg.outerHTML);
         updateSavedLayoutsDropdown();
         alert('Layout saved!');
-    });
+    }
+    // Usage:
     saveDesignerLayoutBtn.addEventListener('click', function () {
-        var layoutName = prompt("Enter a name for this designer layout:");
-        if (!layoutName)
-            return;
-        if (designerSVG) {
-            localStorage.setItem('seatLayout_' + layoutName, designerSVG.outerHTML);
-            updateSavedLayoutsDropdown();
-            alert('Designer layout saved!');
-        }
-        else {
-            alert('Designer SVG is not available.');
-        }
+        return saveLayout(designerSVG, "Enter a name for this designer layout:", 'seatLayout_');
     });
     saveUploadedLayoutBtn.addEventListener('click', function () {
-        var layoutName = prompt("Enter a name for this uploaded layout:");
-        if (!layoutName)
-            return;
-        localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
-        updateSavedLayoutsDropdown();
-        alert('Uploaded SVG layout saved!');
+        return saveLayout(seatSVG, "Enter a name for this uploaded layout:", 'seatLayout_');
+    });
+    saveLayoutBtn.addEventListener('click', function () {
+        return saveLayout(seatSVG, "Enter a name for this layout:", 'seatLayout_');
     });
     // --- Role Toggle ---
     roleSelect.addEventListener('change', function () {
@@ -126,7 +113,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         var totalHeight = rows * (seatSize + gap);
         seatSVG.setAttribute("viewBox", "0 0 ".concat(totalWidth, " ").concat(totalHeight));
         for (var r = 0; r < rows; r++) {
-            var _loop_1 = function (c) {
+            for (var c = 0; c < cols; c++) {
                 var seatId = String.fromCharCode(65 + r) + (c + 1);
                 var x = c * (seatSize + gap);
                 var y = r * (seatSize + gap);
@@ -140,12 +127,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 rect.setAttribute('data-seat-id', seatId);
                 if (!occupiedSeats.has(seatId)) {
                     rect.style.cursor = 'pointer';
-                    rect.addEventListener('click', function () { return toggleSVGSeat(seatId, rect); });
                 }
                 seatSVG.appendChild(rect);
-            };
-            for (var c = 0; c < cols; c++) {
-                _loop_1(c);
             }
         }
     }
@@ -189,6 +172,23 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         reader.readAsText(file);
     });
     // --- Layout Management ---
+    function fixDuplicateSeatIds(svg) {
+        var ids = new Set();
+        var rects = svg.querySelectorAll('rect');
+        var counter = 1;
+        rects.forEach(function (rect) {
+            var _a;
+            var id = (_a = rect.getAttribute('data-seat-id')) === null || _a === void 0 ? void 0 : _a.trim();
+            if (!id || ids.has(id.toLowerCase())) {
+                // Assign a new unique ID
+                while (ids.has("seat".concat(counter).toLowerCase()))
+                    counter++;
+                id = "Seat".concat(counter);
+                rect.setAttribute('data-seat-id', id);
+            }
+            ids.add(id.toLowerCase());
+        });
+    }
     loadLayoutBtn.addEventListener('click', function () {
         seatMapType = 'svg';
         var key = savedLayoutsDropdown.value;
@@ -207,6 +207,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             }
         });
         seatSVG.innerHTML = importedSVG.innerHTML;
+        fixDuplicateSeatIds(seatSVG);
         attachSVGSeatListeners();
         updateUI();
     });
@@ -223,6 +224,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         }
     });
     updateSavedLayoutsDropdown();
+    seatSVG.addEventListener('click', function (e) {
+        var target = e.target;
+        if (target.tagName === 'rect' &&
+            target.hasAttribute('data-seat-id') &&
+            !occupiedSeats.has(target.getAttribute('data-seat-id'))) {
+            var seatId = target.getAttribute('data-seat-id');
+            toggleSVGSeat(seatId, target);
+        }
+    });
     // --- Seat Selection Logic ---
     function attachSVGSeatListeners() {
         var seatRects = seatSVG.querySelectorAll('rect');
@@ -245,7 +255,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 seatRect.style.cursor = 'pointer';
                 if (!occupiedSeats.has(seatId)) {
                     seatRect.setAttribute('fill', '#e0e0e0');
-                    seatRect.addEventListener('click', function () { return toggleSVGSeat(seatId, seatRect); });
                 }
                 else {
                     seatRect.setAttribute('fill', '#d32f2f');
@@ -340,6 +349,24 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         alert("Selection reset. Please select how many seats you want again.");
     };
     userPanel.appendChild(resetBtn);
+    function getNextAvailableDesignerSeatId() {
+        // Collect all used numbers from data-seat-id attributes
+        var usedNumbers = new Set();
+        var rects = designerSVG.querySelectorAll('rect');
+        rects.forEach(function (rect) {
+            var id = rect.getAttribute('data-seat-id');
+            if (id && /^Seat\d+$/.test(id)) {
+                var num = parseInt(id.replace('Seat', ''), 10);
+                if (!isNaN(num))
+                    usedNumbers.add(num);
+            }
+        });
+        // Find the lowest unused number
+        var next = 1;
+        while (usedNumbers.has(next))
+            next++;
+        return "Seat".concat(next);
+    }
     // --- Designer Logic ---
     if (designerSVG) {
         addSeatBtn.addEventListener('click', function () {
@@ -366,14 +393,13 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             rect.setAttribute('height', '15');
             rect.setAttribute('fill', '#49D44B');
             rect.setAttribute('stroke', '#222');
-            rect.setAttribute('data-seat-id', "Seat".concat(designerSeats.length + 1));
+            rect.setAttribute('data-seat-id', getNextAvailableDesignerSeatId());
             rect.style.cursor = 'pointer';
             rect.addEventListener('click', function (evt) {
                 evt.stopPropagation();
                 selectDesignerSeat(rect);
             });
             designerSVG.appendChild(rect);
-            designerSeats.push(rect);
             selectDesignerSeat(rect);
         });
     }
@@ -386,14 +412,30 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         seatIdInput.value = rect.getAttribute('data-seat-id') || '';
     }
     updateSeatIdBtn.addEventListener('click', function () {
+        var _a;
         if (selectedDesignerSeat) {
-            selectedDesignerSeat.setAttribute('data-seat-id', seatIdInput.value);
+            var newId = seatIdInput.value.trim();
+            if (!newId) {
+                alert('Seat ID cannot be empty.');
+                return;
+            }
+            // Check for duplicate ID (case-insensitive, trimmed)
+            var rects = designerSVG.querySelectorAll('rect');
+            for (var _i = 0, _b = Array.from(rects); _i < _b.length; _i++) {
+                var rect = _b[_i];
+                if (rect !== selectedDesignerSeat &&
+                    ((_a = rect.getAttribute('data-seat-id')) === null || _a === void 0 ? void 0 : _a.trim().toLowerCase()) === newId.toLowerCase()) {
+                    alert('This Seat ID is already used. Please choose a unique ID.');
+                    return;
+                }
+            }
+            selectedDesignerSeat.setAttribute('data-seat-id', newId);
+            seatIdInput.value = newId; // reflect the update
         }
     });
     deleteSeatBtn.addEventListener('click', function () {
         if (selectedDesignerSeat && designerSVG) {
             designerSVG.removeChild(selectedDesignerSeat);
-            designerSeats = designerSeats.filter(function (r) { return r !== selectedDesignerSeat; });
             selectedDesignerSeat = null;
             seatIdInput.value = '';
         }

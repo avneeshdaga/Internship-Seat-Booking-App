@@ -5,10 +5,8 @@
   let selectedSeats: Set<string> = new Set();
   let occupiedSeats: Set<string> = new Set();
   let seatMapType: 'grid' | 'svg' = 'grid';
-
   let lastSVGString: string = '';
   let maxSelectableSeats: number | null = null;
-  let designerSeats: SVGRectElement[] = [];
   let selectedDesignerSeat: SVGRectElement | null = null;
   let addMode = false;
 
@@ -40,8 +38,7 @@
 
   const saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn') as HTMLButtonElement;
   const saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn') as HTMLButtonElement;
-  const designerSVGElement = document.getElementById('designerSVG');
-  const designerSVG = (designerSVGElement instanceof SVGSVGElement) ? designerSVGElement : null;
+  const designerSVG = document.getElementById('designerSVG') as unknown as SVGSVGElement; 
 
   // --- Utility Functions ---
   function updateSavedLayoutsDropdown(): void {
@@ -78,33 +75,24 @@
   }
 
   // Save current SVG layout
-    saveLayoutBtn.addEventListener('click', () => {
-        const layoutName = prompt("Enter a name for this layout:");
-        if (!layoutName) return;
-        localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
-        updateSavedLayoutsDropdown();
-        alert('Layout saved!');
-    });
-
-  saveDesignerLayoutBtn.addEventListener('click', () => {
-      const layoutName = prompt("Enter a name for this designer layout:");
-      if (!layoutName) return;
-      if (designerSVG) {
-        localStorage.setItem('seatLayout_' + layoutName, designerSVG.outerHTML);
-        updateSavedLayoutsDropdown();
-        alert('Designer layout saved!');
-      } else {
-        alert('Designer SVG is not available.');
-      }
-  });
+    function saveLayout(svg: SVGSVGElement, promptMsg: string, prefix: string) {
+    const layoutName = prompt(promptMsg);
+    if (!layoutName) return;
+    localStorage.setItem(prefix + layoutName, svg.outerHTML);
+    updateSavedLayoutsDropdown();
+    alert('Layout saved!');
+  }
   
-  saveUploadedLayoutBtn.addEventListener('click', () => {
-      const layoutName = prompt("Enter a name for this uploaded layout:");
-      if (!layoutName) return;
-        localStorage.setItem('seatLayout_' + layoutName, seatSVG.outerHTML);
-        updateSavedLayoutsDropdown();
-        alert('Uploaded SVG layout saved!');
-  });
+  // Usage:
+  saveDesignerLayoutBtn.addEventListener('click', () =>
+    saveLayout(designerSVG, "Enter a name for this designer layout:", 'seatLayout_')
+  );
+  saveUploadedLayoutBtn.addEventListener('click', () =>
+    saveLayout(seatSVG, "Enter a name for this uploaded layout:", 'seatLayout_')
+  );
+  saveLayoutBtn.addEventListener('click', () =>
+    saveLayout(seatSVG, "Enter a name for this layout:", 'seatLayout_')
+  );
 
   // --- Role Toggle ---
   roleSelect.addEventListener('change', () => {
@@ -138,7 +126,6 @@
         rect.setAttribute('data-seat-id', seatId);
         if (!occupiedSeats.has(seatId)) {
           rect.style.cursor = 'pointer';
-          rect.addEventListener('click', () => toggleSVGSeat(seatId, rect));
         }
         seatSVG.appendChild(rect);
       }
@@ -184,6 +171,23 @@
   });
 
   // --- Layout Management ---
+
+  function fixDuplicateSeatIds(svg: SVGSVGElement) {
+    const ids = new Set<string>();
+    const rects = svg.querySelectorAll('rect');
+    let counter = 1;
+    rects.forEach(rect => {
+      let id = rect.getAttribute('data-seat-id')?.trim();
+      if (!id || ids.has(id.toLowerCase())) {
+        // Assign a new unique ID
+        while (ids.has(`seat${counter}`.toLowerCase())) counter++;
+        id = `Seat${counter}`;
+        rect.setAttribute('data-seat-id', id);
+      }
+      ids.add(id.toLowerCase());
+    });
+  }
+  
   loadLayoutBtn.addEventListener('click', () => {
     seatMapType = 'svg';
     const key = savedLayoutsDropdown.value;
@@ -200,6 +204,7 @@
       }
     });
     seatSVG.innerHTML = importedSVG.innerHTML;
+    fixDuplicateSeatIds(seatSVG);
     attachSVGSeatListeners();
     updateUI();
   });
@@ -218,6 +223,18 @@
   });
 
   updateSavedLayoutsDropdown();
+
+    seatSVG.addEventListener('click', (e) => {
+      const target = e.target as SVGRectElement;
+      if (
+        target.tagName === 'rect' &&
+        target.hasAttribute('data-seat-id') &&
+        !occupiedSeats.has(target.getAttribute('data-seat-id')!)
+      ) {
+        const seatId = target.getAttribute('data-seat-id')!;
+        toggleSVGSeat(seatId, target);
+      }
+    });
 
   // --- Seat Selection Logic ---
   function attachSVGSeatListeners(): void {
@@ -241,7 +258,6 @@
         seatRect.style.cursor = 'pointer';
         if (!occupiedSeats.has(seatId)) {
           seatRect.setAttribute('fill', '#e0e0e0');
-          seatRect.addEventListener('click', () => toggleSVGSeat(seatId, seatRect));
         } else {
           seatRect.setAttribute('fill', '#d32f2f');
         }
@@ -335,6 +351,23 @@
   };
   userPanel.appendChild(resetBtn);
 
+  function getNextAvailableDesignerSeatId(): string {
+    // Collect all used numbers from data-seat-id attributes
+    const usedNumbers = new Set<number>();
+    const rects = designerSVG.querySelectorAll('rect');
+    rects.forEach(rect => {
+      const id = rect.getAttribute('data-seat-id');
+      if (id && /^Seat\d+$/.test(id)) {
+        const num = parseInt(id.replace('Seat', ''), 10);
+        if (!isNaN(num)) usedNumbers.add(num);
+      }
+    });
+    // Find the lowest unused number
+    let next = 1;
+    while (usedNumbers.has(next)) next++;
+    return `Seat${next}`;
+  }
+
   // --- Designer Logic ---
   if (designerSVG) {
     addSeatBtn.addEventListener('click', () => {
@@ -360,14 +393,13 @@
       rect.setAttribute('height', '15');
       rect.setAttribute('fill', '#49D44B');
       rect.setAttribute('stroke', '#222');
-      rect.setAttribute('data-seat-id', `Seat${designerSeats.length + 1}`);
+      rect.setAttribute('data-seat-id', getNextAvailableDesignerSeatId());      
       rect.style.cursor = 'pointer';
       rect.addEventListener('click', (evt) => {
         evt.stopPropagation();
         selectDesignerSeat(rect);
       });
       designerSVG.appendChild(rect);
-      designerSeats.push(rect);
       selectDesignerSeat(rect);
     });
   }
@@ -383,14 +415,30 @@
 
   updateSeatIdBtn.addEventListener('click', () => {
     if (selectedDesignerSeat) {
-      selectedDesignerSeat.setAttribute('data-seat-id', seatIdInput.value);
+      const newId = seatIdInput.value.trim();
+      if (!newId) {
+        alert('Seat ID cannot be empty.');
+        return;
+      }
+      // Check for duplicate ID (case-insensitive, trimmed)
+      const rects = designerSVG.querySelectorAll('rect');
+      for (const rect of Array.from(rects)) {
+        if (
+          rect !== selectedDesignerSeat &&
+          rect.getAttribute('data-seat-id')?.trim().toLowerCase() === newId.toLowerCase()
+        ) {
+          alert('This Seat ID is already used. Please choose a unique ID.');
+          return;
+        }
+      }
+      selectedDesignerSeat.setAttribute('data-seat-id', newId);
+      seatIdInput.value = newId; // reflect the update
     }
   });
 
   deleteSeatBtn.addEventListener('click', () => {
     if (selectedDesignerSeat && designerSVG) {
       designerSVG.removeChild(selectedDesignerSeat);
-      designerSeats = designerSeats.filter(r => r !== selectedDesignerSeat);
       selectedDesignerSeat = null;
       seatIdInput.value = '';
     }
