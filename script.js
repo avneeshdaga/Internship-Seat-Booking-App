@@ -18,6 +18,8 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var maxSelectableSeats = null;
     var selectedDesignerSeat = null;
     var addMode = false;
+    var dragTarget = null;
+    var offsetX = 0, offsetY = 0;
     // --- DOM Elements ---
     var roleSelect = document.getElementById('roleSelect');
     var adminPanel = document.getElementById('adminPanel');
@@ -394,7 +396,32 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         return "Seat".concat(next);
     }
     // --- Designer Logic ---
-    if (designerSVG) {
+    function makeDraggable(rect) {
+        rect.addEventListener('mousedown', function (e) {
+            // Only allow drag if in admin mode 
+            if (roleSelect.value !== 'admin')
+                return;
+            dragTarget = rect;
+            offsetX = e.offsetX - parseFloat(rect.getAttribute('x') || "0");
+            offsetY = e.offsetY - parseFloat(rect.getAttribute('y') || "0");
+            e.stopPropagation();
+        });
+    }
+    designerSVG.addEventListener('mousemove', function (e) {
+        if (dragTarget && roleSelect.value === 'admin') {
+            var newX = e.offsetX - offsetX;
+            var newY = e.offsetY - offsetY;
+            dragTarget.setAttribute('x', newX.toString());
+            dragTarget.setAttribute('y', newY.toString());
+        }
+    });
+    designerSVG.addEventListener('mouseup', function () {
+        dragTarget = null;
+    });
+    designerSVG.addEventListener('mouseleave', function () {
+        dragTarget = null;
+    });
+    if (designerSVG && roleSelect.value === 'admin') {
         addSeatBtn.addEventListener('click', function () {
             addMode = !addMode;
             addSeatBtn.textContent = addMode ? "Adding... (Click SVG)" : "Add Seat";
@@ -425,6 +452,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 evt.stopPropagation();
                 selectDesignerSeat(rect);
             });
+            makeDraggable(rect); // Enable dragging for this seat
             designerSVG.appendChild(rect);
             selectDesignerSeat(rect);
         });

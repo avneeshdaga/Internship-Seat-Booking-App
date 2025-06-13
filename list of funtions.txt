@@ -4,7 +4,7 @@ See a grid of available seats.
 Click to select or deselect seats.
 View the total price and selected seat numbers.
 See occupied seats (disabled).
-Optionally confirm booking (just shows an alert or message).
+confirm booking (just shows an alert or message).
 
 functions needed:
 1. generateseats
@@ -20,3 +20,8 @@ seat should have id using attribute
 check how many seats and ask user how many they want- tell them if available or not 
 if want two and two seats are available together, select both with one click.
 convert js to ts 
+
+- click and drag
+- snap to grid
+- boundaries or multi select 
+- duplicate and selct and duplicate.

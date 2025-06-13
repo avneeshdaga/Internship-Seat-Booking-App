@@ -10,6 +10,9 @@
   let selectedDesignerSeat: SVGRectElement | null = null;
   let addMode = false;
 
+  let dragTarget: SVGRectElement | null = null;
+  let offsetX = 0, offsetY = 0;
+
   // --- DOM Elements ---
   const roleSelect = document.getElementById('roleSelect') as HTMLSelectElement;
   const adminPanel = document.getElementById('adminPanel') as HTMLDivElement;
@@ -395,7 +398,36 @@
   }
 
   // --- Designer Logic ---
-  if (designerSVG) {
+  
+  function makeDraggable(rect: SVGRectElement) {
+    rect.addEventListener('mousedown', (e: MouseEvent) => {
+      // Only allow drag if in admin mode 
+      if (roleSelect.value !== 'admin') return;
+        dragTarget = rect;
+        offsetX = e.offsetX - parseFloat(rect.getAttribute('x') || "0");
+        offsetY = e.offsetY - parseFloat(rect.getAttribute('y') || "0");
+        e.stopPropagation();
+      });
+  } 
+
+  designerSVG.addEventListener('mousemove', (e: MouseEvent) => {
+      if (dragTarget && roleSelect.value === 'admin') {
+        let newX = e.offsetX - offsetX;
+        let newY = e.offsetY - offsetY;
+        dragTarget.setAttribute('x', newX.toString());
+        dragTarget.setAttribute('y', newY.toString());
+      }
+  });
+  
+  designerSVG.addEventListener('mouseup', () => {
+    dragTarget = null;
+  });
+
+  designerSVG.addEventListener('mouseleave', () => {
+    dragTarget = null;
+  });
+
+  if (designerSVG && roleSelect.value === 'admin') {
     addSeatBtn.addEventListener('click', () => {
       addMode = !addMode;
       addSeatBtn.textContent = addMode ? "Adding... (Click SVG)" : "Add Seat";
@@ -425,6 +457,7 @@
         evt.stopPropagation();
         selectDesignerSeat(rect);
       });
+      makeDraggable(rect); // Enable dragging for this seat
       designerSVG.appendChild(rect);
       selectDesignerSeat(rect);
     });
