@@ -87,15 +87,12 @@
   }
   
   // Usage:
-  saveDesignerLayoutBtn.addEventListener('click', () =>
-    saveLayout(designerSVG, "Enter a name for this designer layout:", 'seatLayout_')
-  );
-  saveUploadedLayoutBtn.addEventListener('click', () =>
-    saveLayout(seatSVG, "Enter a name for this uploaded layout:", 'seatLayout_')
-  );
-  saveLayoutBtn.addEventListener('click', () =>
-    saveLayout(seatSVG, "Enter a name for this layout:", 'seatLayout_')
-  );
+  function saveLayoutHandler(svg: SVGSVGElement, promptMsg: string, prefix: string) {
+    return () => saveLayout(svg, promptMsg, prefix);
+  }
+  saveDesignerLayoutBtn.addEventListener('click', saveLayoutHandler(designerSVG, "Enter a name for this designer layout:", 'seatLayout_'));
+  saveUploadedLayoutBtn.addEventListener('click', saveLayoutHandler(seatSVG, "Enter a name for this uploaded layout:", 'seatLayout_'));
+  saveLayoutBtn.addEventListener('click', saveLayoutHandler(seatSVG, "Enter a name for this layout:", 'seatLayout_'));
 
   // --- Role Toggle ---
   roleSelect.addEventListener('change', () => {
@@ -191,6 +188,16 @@
     });
   }
   
+  function countAvailableSeats(): number {
+    const seatRects = seatSVG.querySelectorAll('rect');
+    let count = 0;
+    seatRects.forEach(rect => {
+      const seatId = rect.getAttribute('data-seat-id');
+      if (seatId && !occupiedSeats.has(seatId)) count++;
+    });
+    return count;
+  }
+
   loadLayoutBtn.addEventListener('click', () => {
     seatMapType = 'svg';
     const key = savedLayoutsDropdown.value;
@@ -272,27 +279,7 @@
   }
 
   function promptForSeatCount() {
-    // Count available seats (not occupied)
-    let availableSeats = 0;
-    if (seatMapType === 'svg') {
-      const seatRects = seatSVG.querySelectorAll('rect');
-      seatRects.forEach(rect => {
-        const seatId = rect.getAttribute('data-seat-id');
-        if (seatId && !occupiedSeats.has(seatId)) {
-          availableSeats++;
-        }
-     });
-    } else if (seatMapType === 'grid') {
-      // For grid, all seats are in seatSVG as well
-      const seatRects = seatSVG.querySelectorAll('rect');
-      seatRects.forEach(rect => {
-        const seatId = rect.getAttribute('data-seat-id');
-        if (seatId && !occupiedSeats.has(seatId)) {
-          availableSeats++;
-        }
-      });
-    }
-
+    const availableSeats = countAvailableSeats();
     const input = prompt(`How many seats do you want to select? (Available: ${availableSeats})`);
     if (!input) {
       maxSelectableSeats = null;
