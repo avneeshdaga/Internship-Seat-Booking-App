@@ -13,6 +13,11 @@
   let dragTarget: SVGRectElement | null = null;
   let offsetX = 0, offsetY = 0;
 
+  let userZoomLevel = 1;
+  const minZoom = 1;
+  const maxZoom = 3;
+  const zoomStep = 0.04;
+
   // --- DOM Elements ---
   const roleSelect = document.getElementById('roleSelect') as HTMLSelectElement;
   const adminPanel = document.getElementById('adminPanel') as HTMLDivElement;
@@ -28,7 +33,7 @@
   const confirmBtn = document.getElementById('confirmBtn') as HTMLButtonElement;
   const svgUpload = document.getElementById('svgUpload') as HTMLInputElement;
   const saveLayoutBtn = document.getElementById('saveLayoutBtn') as HTMLButtonElement;
-
+  const zoomResetBtn = document.getElementById('zoomResetBtn') as HTMLButtonElement;
 
   const savedLayoutsDropdown = document.getElementById('savedLayoutsDropdown') as HTMLSelectElement;
   const loadLayoutBtn = document.getElementById('loadLayoutBtn') as HTMLButtonElement;
@@ -42,6 +47,133 @@
   const saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn') as HTMLButtonElement;
   const saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn') as HTMLButtonElement;
   const designerSVG = document.getElementById('designerSVG') as unknown as SVGSVGElement; 
+
+  // --- Original View ---
+  let originalViewBox = seatSVG.getAttribute('viewBox');
+  if (!originalViewBox) {
+    originalViewBox = `0 0 ${seatSVG.width.baseVal.value} ${seatSVG.height.baseVal.value}`;
+    seatSVG.setAttribute('viewBox', originalViewBox);
+  }
+  let [viewX, viewY, viewW, viewH] = originalViewBox.split(' ').map(Number);
+
+  let panX = viewX, panY = viewY, panW = viewW, panH = viewH;
+  
+  // --- Zoom Logic ---
+  function setUserZoom(zoom: number, centerX?: number, centerY?: number) {
+    userZoomLevel = Math.max(minZoom, Math.min(maxZoom, zoom));
+    const newW = viewW / userZoomLevel;
+    const newH = viewH / userZoomLevel;
+  
+    if (userZoomLevel === minZoom) {
+      // At min zoom, always reset to original viewBox
+      panX = viewX;
+      panY = viewY;
+      panW = viewW;
+      panH = viewH;
+    } else {
+      // If zooming on a point, adjust pan so that point stays under the cursor
+      if (typeof centerX === 'number' && typeof centerY === 'number') {
+        // centerX/centerY are in SVG coordinates
+        const zoomRatio = newW / panW;
+        panX = centerX - (centerX - panX) * zoomRatio;
+        panY = centerY - (centerY - panY) * zoomRatio;
+      }
+      panW = newW;
+      panH = newH;
+      clampPan();
+    }
+    seatSVG.setAttribute('viewBox', `${panX} ${panY} ${panW} ${panH}`);
+  }
+  
+  // --- Pan Logic ---
+  let isPanning = false;
+  let panStart = { x: 0, y: 0 };
+  
+  seatSVG.addEventListener('mousedown', (e) => {
+    if ((e.target as Element).tagName === 'rect') return;
+    isPanning = true;
+    panStart = { x: e.clientX, y: e.clientY };
+    seatSVG.style.cursor = 'grab';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!isPanning) return;
+    const dx = (e.clientX - panStart.x) * (panW / seatSVG.clientWidth);
+    const dy = (e.clientY - panStart.y) * (panH / seatSVG.clientHeight);
+    panX -= dx;
+    panY -= dy;
+    panStart = { x: e.clientX, y: e.clientY };
+    setUserZoom(userZoomLevel); // Always use setUserZoom to update viewBox and clamp
+  });
+  window.addEventListener('mouseup', () => {
+    isPanning = false;
+    seatSVG.style.cursor = '';
+  });
+  
+  function clampPan() {
+    // Clamp panX and panY so the viewBox stays within the SVG bounds
+    if (panW > viewW) panX = viewX;
+    else panX = Math.max(viewX, Math.min(panX, viewX + viewW - panW));
+    if (panH > viewH) panY = viewY;
+    else panY = Math.max(viewY, Math.min(panY, viewY + viewH - panH));
+  }
+
+  // --- Touch Pan & Pinch Zoom ---
+  let lastTouchDist = 0;
+  seatSVG.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      isPanning = true;
+      panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+      isPanning = false;
+      lastTouchDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+    }
+  });
+  seatSVG.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1 && isPanning) {
+      const dx = (e.touches[0].clientX - panStart.x) * (panW / seatSVG.clientWidth);
+      const dy = (e.touches[0].clientY - panStart.y) * (panH / seatSVG.clientHeight);
+      panX -= dx;
+      panY -= dy;
+      panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      setUserZoom(userZoomLevel); // Always use setUserZoom to update viewBox and clamp
+    } else if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      if (lastTouchDist) {
+        const zoomChange = dist / lastTouchDist;
+        setUserZoom(userZoomLevel * zoomChange);
+      }
+      lastTouchDist = dist;
+    }
+  }, { passive: false });
+  seatSVG.addEventListener('touchend', () => {
+    isPanning = false;
+    lastTouchDist = 0;
+  });
+  
+  // --- Mouse Wheel & Touchpad Zoom ---
+  seatSVG.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const direction = e.deltaY < 0 ? 1 : -1;
+    const rect = seatSVG.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * panW + panX;
+    const mouseY = ((e.clientY - rect.top) / rect.height) * panH + panY;
+    setUserZoom(userZoomLevel + direction * zoomStep, mouseX, mouseY);
+  }, { passive: false });
+  
+  // --- Reset Button ---
+  zoomResetBtn.addEventListener('click', () => {
+    panX = viewX;
+    panY = viewY;
+    panW = viewW;
+    panH = viewH;
+    setUserZoom(1);
+  });
 
   // --- Utility Functions ---
   function updateSavedLayoutsDropdown(): void {

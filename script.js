@@ -20,6 +20,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var addMode = false;
     var dragTarget = null;
     var offsetX = 0, offsetY = 0;
+    var userZoomLevel = 1;
+    var minZoom = 1;
+    var maxZoom = 3;
+    var zoomStep = 0.04;
     // --- DOM Elements ---
     var roleSelect = document.getElementById('roleSelect');
     var adminPanel = document.getElementById('adminPanel');
@@ -34,6 +38,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var confirmBtn = document.getElementById('confirmBtn');
     var svgUpload = document.getElementById('svgUpload');
     var saveLayoutBtn = document.getElementById('saveLayoutBtn');
+    var zoomResetBtn = document.getElementById('zoomResetBtn');
     var savedLayoutsDropdown = document.getElementById('savedLayoutsDropdown');
     var loadLayoutBtn = document.getElementById('loadLayoutBtn');
     var deleteLayoutBtn = document.getElementById('deleteLayoutBtn');
@@ -44,6 +49,126 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn');
     var saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn');
     var designerSVG = document.getElementById('designerSVG');
+    // --- Original View ---
+    var originalViewBox = seatSVG.getAttribute('viewBox');
+    if (!originalViewBox) {
+        originalViewBox = "0 0 ".concat(seatSVG.width.baseVal.value, " ").concat(seatSVG.height.baseVal.value);
+        seatSVG.setAttribute('viewBox', originalViewBox);
+    }
+    var _a = originalViewBox.split(' ').map(Number), viewX = _a[0], viewY = _a[1], viewW = _a[2], viewH = _a[3];
+    var panX = viewX, panY = viewY, panW = viewW, panH = viewH;
+    // --- Zoom Logic ---
+    function setUserZoom(zoom, centerX, centerY) {
+        userZoomLevel = Math.max(minZoom, Math.min(maxZoom, zoom));
+        var newW = viewW / userZoomLevel;
+        var newH = viewH / userZoomLevel;
+        if (userZoomLevel === minZoom) {
+            // At min zoom, always reset to original viewBox
+            panX = viewX;
+            panY = viewY;
+            panW = viewW;
+            panH = viewH;
+        }
+        else {
+            // If zooming on a point, adjust pan so that point stays under the cursor
+            if (typeof centerX === 'number' && typeof centerY === 'number') {
+                // centerX/centerY are in SVG coordinates
+                var zoomRatio = newW / panW;
+                panX = centerX - (centerX - panX) * zoomRatio;
+                panY = centerY - (centerY - panY) * zoomRatio;
+            }
+            panW = newW;
+            panH = newH;
+            clampPan();
+        }
+        seatSVG.setAttribute('viewBox', "".concat(panX, " ").concat(panY, " ").concat(panW, " ").concat(panH));
+    }
+    // --- Pan Logic ---
+    var isPanning = false;
+    var panStart = { x: 0, y: 0 };
+    seatSVG.addEventListener('mousedown', function (e) {
+        if (e.target.tagName === 'rect')
+            return;
+        isPanning = true;
+        panStart = { x: e.clientX, y: e.clientY };
+        seatSVG.style.cursor = 'grab';
+    });
+    window.addEventListener('mousemove', function (e) {
+        if (!isPanning)
+            return;
+        var dx = (e.clientX - panStart.x) * (panW / seatSVG.clientWidth);
+        var dy = (e.clientY - panStart.y) * (panH / seatSVG.clientHeight);
+        panX -= dx;
+        panY -= dy;
+        panStart = { x: e.clientX, y: e.clientY };
+        setUserZoom(userZoomLevel); // Always use setUserZoom to update viewBox and clamp
+    });
+    window.addEventListener('mouseup', function () {
+        isPanning = false;
+        seatSVG.style.cursor = '';
+    });
+    function clampPan() {
+        // Clamp panX and panY so the viewBox stays within the SVG bounds
+        if (panW > viewW)
+            panX = viewX;
+        else
+            panX = Math.max(viewX, Math.min(panX, viewX + viewW - panW));
+        if (panH > viewH)
+            panY = viewY;
+        else
+            panY = Math.max(viewY, Math.min(panY, viewY + viewH - panH));
+    }
+    // --- Touch Pan & Pinch Zoom ---
+    var lastTouchDist = 0;
+    seatSVG.addEventListener('touchstart', function (e) {
+        if (e.touches.length === 1) {
+            isPanning = true;
+            panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }
+        else if (e.touches.length === 2) {
+            isPanning = false;
+            lastTouchDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+        }
+    });
+    seatSVG.addEventListener('touchmove', function (e) {
+        if (e.touches.length === 1 && isPanning) {
+            var dx = (e.touches[0].clientX - panStart.x) * (panW / seatSVG.clientWidth);
+            var dy = (e.touches[0].clientY - panStart.y) * (panH / seatSVG.clientHeight);
+            panX -= dx;
+            panY -= dy;
+            panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+            setUserZoom(userZoomLevel); // Always use setUserZoom to update viewBox and clamp
+        }
+        else if (e.touches.length === 2) {
+            var dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+            if (lastTouchDist) {
+                var zoomChange = dist / lastTouchDist;
+                setUserZoom(userZoomLevel * zoomChange);
+            }
+            lastTouchDist = dist;
+        }
+    }, { passive: false });
+    seatSVG.addEventListener('touchend', function () {
+        isPanning = false;
+        lastTouchDist = 0;
+    });
+    // --- Mouse Wheel & Touchpad Zoom ---
+    seatSVG.addEventListener('wheel', function (e) {
+        e.preventDefault();
+        var direction = e.deltaY < 0 ? 1 : -1;
+        var rect = seatSVG.getBoundingClientRect();
+        var mouseX = ((e.clientX - rect.left) / rect.width) * panW + panX;
+        var mouseY = ((e.clientY - rect.top) / rect.height) * panH + panY;
+        setUserZoom(userZoomLevel + direction * zoomStep, mouseX, mouseY);
+    }, { passive: false });
+    // --- Reset Button ---
+    zoomResetBtn.addEventListener('click', function () {
+        panX = viewX;
+        panY = viewY;
+        panW = viewW;
+        panH = viewH;
+        setUserZoom(1);
+    });
     // --- Utility Functions ---
     function updateSavedLayoutsDropdown() {
         savedLayoutsDropdown.innerHTML = '<option value="">Select Saved Layout</option>';
@@ -88,15 +213,12 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         alert('Layout saved!');
     }
     // Usage:
-    saveDesignerLayoutBtn.addEventListener('click', function () {
-        return saveLayout(designerSVG, "Enter a name for this designer layout:", 'seatLayout_');
-    });
-    saveUploadedLayoutBtn.addEventListener('click', function () {
-        return saveLayout(seatSVG, "Enter a name for this uploaded layout:", 'seatLayout_');
-    });
-    saveLayoutBtn.addEventListener('click', function () {
-        return saveLayout(seatSVG, "Enter a name for this layout:", 'seatLayout_');
-    });
+    function saveLayoutHandler(svg, promptMsg, prefix) {
+        return function () { return saveLayout(svg, promptMsg, prefix); };
+    }
+    saveDesignerLayoutBtn.addEventListener('click', saveLayoutHandler(designerSVG, "Enter a name for this designer layout:", 'seatLayout_'));
+    saveUploadedLayoutBtn.addEventListener('click', saveLayoutHandler(seatSVG, "Enter a name for this uploaded layout:", 'seatLayout_'));
+    saveLayoutBtn.addEventListener('click', saveLayoutHandler(seatSVG, "Enter a name for this layout:", 'seatLayout_'));
     // --- Role Toggle ---
     roleSelect.addEventListener('change', function () {
         if (roleSelect.value === 'admin') {
@@ -191,6 +313,16 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             ids.add(id.toLowerCase());
         });
     }
+    function countAvailableSeats() {
+        var seatRects = seatSVG.querySelectorAll('rect');
+        var count = 0;
+        seatRects.forEach(function (rect) {
+            var seatId = rect.getAttribute('data-seat-id');
+            if (seatId && !occupiedSeats.has(seatId))
+                count++;
+        });
+        return count;
+    }
     loadLayoutBtn.addEventListener('click', function () {
         seatMapType = 'svg';
         var key = savedLayoutsDropdown.value;
@@ -269,27 +401,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         });
     }
     function promptForSeatCount() {
-        // Count available seats (not occupied)
-        var availableSeats = 0;
-        if (seatMapType === 'svg') {
-            var seatRects = seatSVG.querySelectorAll('rect');
-            seatRects.forEach(function (rect) {
-                var seatId = rect.getAttribute('data-seat-id');
-                if (seatId && !occupiedSeats.has(seatId)) {
-                    availableSeats++;
-                }
-            });
-        }
-        else if (seatMapType === 'grid') {
-            // For grid, all seats are in seatSVG as well
-            var seatRects = seatSVG.querySelectorAll('rect');
-            seatRects.forEach(function (rect) {
-                var seatId = rect.getAttribute('data-seat-id');
-                if (seatId && !occupiedSeats.has(seatId)) {
-                    availableSeats++;
-                }
-            });
-        }
+        var availableSeats = countAvailableSeats();
         var input = prompt("How many seats do you want to select? (Available: ".concat(availableSeats, ")"));
         if (!input) {
             maxSelectableSeats = null;
