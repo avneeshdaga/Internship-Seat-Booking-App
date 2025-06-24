@@ -19,11 +19,19 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var selectedDesignerSeat = null;
     var addMode = false;
     var dragTarget = null;
-    var offsetX = 0, offsetY = 0;
     var userZoomLevel = 1;
     var minZoom = 1;
     var maxZoom = 3;
     var zoomStep = 0.04;
+    // Rotation 
+    var rotationHandle = null;
+    var rotatingGroup = null;
+    var rotationOrigin = { cx: 0, cy: 0 };
+    var startAngle = 0;
+    var startMouseAngle = 0;
+    var isRotating = false;
+    var justRotated = false;
+    var justDragged = false;
     // --- DOM Elements ---
     var roleSelect = document.getElementById('roleSelect');
     var adminPanel = document.getElementById('adminPanel');
@@ -49,6 +57,114 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn');
     var saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn');
     var designerSVG = document.getElementById('designerSVG');
+    // Show rotation handle next to the seat
+    function showRotationHandle(rect) {
+        if (rotationHandle) {
+            rotationHandle.remove();
+            rotationHandle = null;
+        }
+        var group = rect.parentNode;
+        // Get seat center in local group coordinates
+        var x = parseFloat(rect.getAttribute('x') || "0");
+        var y = parseFloat(rect.getAttribute('y') || "0");
+        var w = parseFloat(rect.getAttribute('width') || "0");
+        var h = parseFloat(rect.getAttribute('height') || "0");
+        var localCx = x + w / 2;
+        var localCy = y + h / 2;
+        // Get seat center in SVG coordinates (for handle position)
+        var cx = localCx, cy = localCy;
+        var ctm = group.getCTM();
+        if (ctm) {
+            var pt = designerSVG.createSVGPoint();
+            pt.x = localCx;
+            pt.y = localCy;
+            var svgPt = pt.matrixTransform(ctm);
+            cx = svgPt.x;
+            cy = svgPt.y;
+        }
+        // Get current group rotation in degrees
+        var transform = group.getAttribute('transform') || '';
+        var match = /rotate\((-?\d+(\.\d+)?)/.exec(transform);
+        var angle = match ? parseFloat(match[1]) : 0;
+        var rad = (angle * Math.PI) / 180;
+        // Offset: 25px at 45° from the seat center, rotated with the seat
+        var offset = 25;
+        var baseAngle = Math.PI / 4; // 45 degrees
+        var handleX = cx + offset * Math.cos(baseAngle + rad);
+        var handleY = cy + offset * Math.sin(baseAngle + rad);
+        rotationHandle = document.createElementNS(svgNS, 'circle');
+        rotationHandle.setAttribute('cx', handleX.toString());
+        rotationHandle.setAttribute('cy', handleY.toString());
+        rotationHandle.setAttribute('r', '3');
+        rotationHandle.setAttribute('fill', '#000');
+        rotationHandle.style.cursor = 'pointer';
+        designerSVG.appendChild(rotationHandle);
+        rotationHandle.onmousedown = function (e) {
+            e.stopPropagation();
+            rotatingGroup = group;
+            // Use local coordinates for rotation center!
+            rotationOrigin = { cx: localCx, cy: localCy };
+            // Get current group rotation
+            var transform = group.getAttribute('transform') || '';
+            var match = /rotate\((-?\d+(\.\d+)?)/.exec(transform);
+            startAngle = match ? parseFloat(match[1]) : 0;
+            // Mouse angle from center (in SVG coordinates)
+            var svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            startMouseAngle = Math.atan2(svgCoords.y - cy, svgCoords.x - cx) * 180 / Math.PI;
+            document.body.style.cursor = 'crosshair';
+        };
+    }
+    // Listen for mousemove/mouseup on window for rotation
+    window.addEventListener('mousemove', function (e) {
+        if (rotatingGroup) {
+            // Get local center for rotation
+            var rect = rotatingGroup.querySelector('rect');
+            if (!rect)
+                return;
+            var x = parseFloat(rect.getAttribute('x') || "0");
+            var y = parseFloat(rect.getAttribute('y') || "0");
+            var w = parseFloat(rect.getAttribute('width') || "0");
+            var h = parseFloat(rect.getAttribute('height') || "0");
+            var localCx = x + w / 2;
+            var localCy = y + h / 2;
+            // Get seat center in SVG coordinates (for mouse angle and handle)
+            var cx = localCx, cy = localCy;
+            var ctm = rotatingGroup.getCTM();
+            if (ctm) {
+                var pt = designerSVG.createSVGPoint();
+                pt.x = localCx;
+                pt.y = localCy;
+                var svgPt = pt.matrixTransform(ctm);
+                cx = svgPt.x;
+                cy = svgPt.y;
+            }
+            var svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            var mouseAngle = Math.atan2(svgCoords.y - cy, svgCoords.x - cx) * 180 / Math.PI;
+            var newAngle = startAngle + (mouseAngle - startMouseAngle);
+            newAngle = ((newAngle % 360) + 360) % 360;
+            // Keep any translation
+            var transform = rotatingGroup.getAttribute('transform') || '';
+            var transMatch = /translate\(([^,]+),([^)]+)\)/.exec(transform);
+            var transPart = '';
+            if (transMatch)
+                transPart = "translate(".concat(transMatch[1], ",").concat(transMatch[2], ") ");
+            rotatingGroup.setAttribute('transform', "".concat(transPart, "rotate(").concat(newAngle, " ").concat(localCx, " ").concat(localCy, ")"));
+            // Move handle visually (in SVG coordinates)
+            if (rotationHandle) {
+                var rad = (newAngle * Math.PI) / 180;
+                var offset = 25;
+                var baseAngle = Math.PI / 4;
+                rotationHandle.setAttribute('cx', (cx + offset * Math.cos(baseAngle + rad)).toString());
+                rotationHandle.setAttribute('cy', (cy + offset * Math.sin(baseAngle + rad)).toString());
+            }
+        }
+    });
+    window.addEventListener('mouseup', function () {
+        if (rotatingGroup) {
+            rotatingGroup = null;
+            document.body.style.cursor = '';
+        }
+    });
     // --- Original View ---
     var originalViewBox = seatSVG.getAttribute('viewBox');
     if (!originalViewBox) {
@@ -102,10 +218,6 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         panY -= dy;
         panStart = { x: e.clientX, y: e.clientY };
         setUserZoom(userZoomLevel); // Always use setUserZoom to update viewBox and clamp
-    });
-    window.addEventListener('mouseup', function () {
-        isPanning = false;
-        seatSVG.style.cursor = '';
     });
     function clampPan() {
         // Clamp panX and panY so the viewBox stays within the SVG bounds
@@ -507,30 +619,66 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             next++;
         return "Seat".concat(next);
     }
+    function getSVGCoords(svg, clientX, clientY) {
+        var pt = svg.createSVGPoint();
+        pt.x = clientX;
+        pt.y = clientY;
+        var ctm = svg.getScreenCTM();
+        if (ctm) {
+            return pt.matrixTransform(ctm.inverse());
+        }
+        return { x: clientX, y: clientY };
+    }
     // --- Designer Logic ---
-    function makeDraggable(rect) {
-        rect.addEventListener('mousedown', function (e) {
-            // Only allow drag if in admin mode 
+    var dragStart = { x: 0, y: 0, tx: 0, ty: 0 };
+    function makeDraggable(group) {
+        group.addEventListener('mousedown', function (e) {
+            justDragged = false;
+            if (isRotating)
+                return;
             if (roleSelect.value !== 'admin')
                 return;
-            dragTarget = rect;
-            offsetX = e.offsetX - parseFloat(rect.getAttribute('x') || "0");
-            offsetY = e.offsetY - parseFloat(rect.getAttribute('y') || "0");
+            dragTarget = group;
+            var transform = group.getAttribute('transform') || '';
+            var match = /translate\(([^,]+),([^)]+)\)/.exec(transform);
+            dragStart = {
+                x: e.clientX,
+                y: e.clientY,
+                tx: match ? parseFloat(match[1]) : 0,
+                ty: match ? parseFloat(match[2]) : 0
+            };
             e.stopPropagation();
         });
     }
     designerSVG.addEventListener('mousemove', function (e) {
         if (dragTarget && roleSelect.value === 'admin') {
-            var newX = e.offsetX - offsetX;
-            var newY = e.offsetY - offsetY;
-            dragTarget.setAttribute('x', newX.toString());
-            dragTarget.setAttribute('y', newY.toString());
+            var dx = e.clientX - dragStart.x;
+            var dy = e.clientY - dragStart.y;
+            var tx = dragStart.tx + dx;
+            var ty = dragStart.ty + dy;
+            // Keep any rotation
+            var transform = dragTarget.getAttribute('transform') || '';
+            var rotMatch = /rotate\(([^)]+)\)/.exec(transform);
+            var rotPart = '';
+            if (rotMatch)
+                rotPart = " rotate(".concat(rotMatch[1], ")");
+            dragTarget.setAttribute('transform', "translate(".concat(tx, ",").concat(ty, ")").concat(rotPart));
+            // Move handle visually
+            if (selectedDesignerSeat && selectedDesignerSeat.parentNode === dragTarget) {
+                showRotationHandle(selectedDesignerSeat);
+            }
         }
     });
     designerSVG.addEventListener('mouseup', function () {
+        if (dragTarget) {
+            justDragged = true;
+        }
         dragTarget = null;
     });
     designerSVG.addEventListener('mouseleave', function () {
+        if (dragTarget) {
+            justDragged = true;
+        }
         dragTarget = null;
     });
     if (designerSVG && roleSelect.value === 'admin') {
@@ -540,20 +688,38 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             addSeatBtn.style.background = addMode ? "#4caf50" : "";
         });
         designerSVG.addEventListener('click', function (e) {
+            if (justDragged) {
+                justDragged = false;
+                return;
+            }
+            if (justRotated) {
+                justRotated = false; // Reset the flag
+                return;
+            }
+            if (isRotating) {
+                isRotating = false; // Stop rotation on click
+                return; // Ignore clicks while rotating
+            }
             if (!addMode) {
                 if (e.target === designerSVG) {
                     if (selectedDesignerSeat)
                         selectedDesignerSeat.setAttribute('stroke', '#222');
                     selectedDesignerSeat = null;
                     seatIdInput.value = '';
+                    // Remove rotation handle 
+                    if (rotationHandle) {
+                        rotationHandle.remove();
+                        rotationHandle = null;
+                    }
                 }
                 return;
             }
             if (e.target !== designerSVG)
                 return;
             var rect = document.createElementNS(svgNS, 'rect');
-            rect.setAttribute('x', (e.offsetX - 10).toString());
-            rect.setAttribute('y', (e.offsetY - 7).toString());
+            var group = document.createElementNS(svgNS, 'g');
+            rect.setAttribute('x', '0');
+            rect.setAttribute('y', '0');
             rect.setAttribute('width', '20');
             rect.setAttribute('height', '15');
             rect.setAttribute('fill', '#49D44B');
@@ -564,8 +730,10 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 evt.stopPropagation();
                 selectDesignerSeat(rect);
             });
-            makeDraggable(rect); // Enable dragging for this seat
-            designerSVG.appendChild(rect);
+            group.appendChild(rect);
+            group.setAttribute('transform', "translate(".concat(e.offsetX, ",").concat(e.offsetY, ")"));
+            designerSVG.appendChild(group);
+            makeDraggable(group); // Pass the group, not the rect
             selectDesignerSeat(rect);
         });
     }
@@ -576,6 +744,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         selectedDesignerSeat = rect;
         rect.setAttribute('stroke', '#f00');
         seatIdInput.value = rect.getAttribute('data-seat-id') || '';
+        showRotationHandle(rect);
     }
     updateSeatIdBtn.addEventListener('click', function () {
         var _a;
@@ -601,9 +770,14 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     });
     deleteSeatBtn.addEventListener('click', function () {
         if (selectedDesignerSeat && designerSVG) {
-            designerSVG.removeChild(selectedDesignerSeat);
+            var group = selectedDesignerSeat.parentNode;
+            designerSVG.removeChild(group);
             selectedDesignerSeat = null;
             seatIdInput.value = '';
+            if (rotationHandle) {
+                rotationHandle.remove();
+                rotationHandle = null;
+            }
         }
     });
 })();
