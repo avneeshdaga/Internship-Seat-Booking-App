@@ -21,11 +21,21 @@
   let rotationHandle: SVGCircleElement | null = null;
   let rotatingGroup: SVGGElement | null = null;
   let rotationOrigin = { cx: 0, cy: 0 };
-  let startAngle = 0; 
+  let startAngle = 0;
   let startMouseAngle = 0;
   let isRotating = false;
   let justRotated = false;
   let justDragged = false;
+
+  // Curve Drawing
+  let drawCurveMode = false;
+  let curvePoints: { x: number, y: number }[] = [];
+  let tempCurve: SVGPathElement | null = null;
+  let curvePointCircles: SVGCircleElement[] = [];
+  let selectedCurve: SVGPathElement | null = null;
+  let curveHandles: SVGCircleElement[] = [];
+  let editingCurve: SVGPathElement | null = null;
+  let editingPointIndex: number | null = null;
 
   // --- DOM Elements ---
   const roleSelect = document.getElementById('roleSelect') as HTMLSelectElement;
@@ -55,8 +65,330 @@
 
   const saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn') as HTMLButtonElement;
   const saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn') as HTMLButtonElement;
-  const designerSVG = document.getElementById('designerSVG') as unknown as SVGSVGElement; 
-  
+  const designerSVG = document.getElementById('designerSVG') as unknown as SVGSVGElement;
+
+  const drawCurveBtn = document.getElementById('drawCurveBtn') as HTMLButtonElement;
+  const deleteCurveBtn = document.getElementById('deleteCurveBtn') as HTMLButtonElement;
+  const designerZoomResetBtn = document.getElementById('designerZoomResetBtn') as HTMLButtonElement;
+
+  // Designer SVG pan/zoom state
+  let designerOriginalViewBox = designerSVG.getAttribute('viewBox');
+  if (!designerOriginalViewBox) {
+    designerOriginalViewBox = `0 0 ${designerSVG.width.baseVal.value} ${designerSVG.height.baseVal.value}`;
+    designerSVG.setAttribute('viewBox', designerOriginalViewBox);
+  }
+  let [designerViewX, designerViewY, designerViewW, designerViewH] = designerOriginalViewBox.split(' ').map(Number);
+
+  let designerPanX = designerViewX, designerPanY = designerViewY, designerPanW = designerViewW, designerPanH = designerViewH;
+  let designerZoomLevel = 1;
+  const designerMinZoom = 1;
+  const designerMaxZoom = 3;
+  const designerZoomStep = 0.04;
+
+  let isDesignerPanning = false;
+  let designerPanStart = { x: 0, y: 0 };
+
+  let dragCurve: SVGPathElement | null = null;
+  let dragCurveStart = { x: 0, y: 0, origD: "" };
+
+  designerZoomResetBtn.addEventListener('click', () => {
+    designerPanX = designerViewX;
+    designerPanY = designerViewY;
+    designerPanW = designerViewW;
+    designerPanH = designerViewH;
+    setDesignerZoom(1);
+  });
+
+  // --- Designer SVG Zoom/Pan Logic ---
+  function setDesignerZoom(zoom: number, centerX?: number, centerY?: number) {
+    designerZoomLevel = Math.max(designerMinZoom, Math.min(designerMaxZoom, zoom));
+    const newW = designerViewW / designerZoomLevel;
+    const newH = designerViewH / designerZoomLevel;
+
+    if (designerZoomLevel === designerMinZoom) {
+      designerPanX = designerViewX;
+      designerPanY = designerViewY;
+      designerPanW = designerViewW;
+      designerPanH = designerViewH;
+    } else {
+      if (typeof centerX === 'number' && typeof centerY === 'number') {
+        const zoomRatio = newW / designerPanW;
+        designerPanX = centerX - (centerX - designerPanX) * zoomRatio;
+        designerPanY = centerY - (centerY - designerPanY) * zoomRatio;
+      }
+      designerPanW = newW;
+      designerPanH = newH;
+      clampDesignerPan();
+    }
+    designerSVG.setAttribute('viewBox', `${designerPanX} ${designerPanY} ${designerPanW} ${designerPanH}`);
+  }
+
+  function clampDesignerPan() {
+    if (designerPanW > designerViewW) designerPanX = designerViewX;
+    else designerPanX = Math.max(designerViewX, Math.min(designerPanX, designerViewX + designerViewW - designerPanW));
+    if (designerPanH > designerViewH) designerPanY = designerViewY;
+    else designerPanY = Math.max(designerViewY, Math.min(designerPanY, designerViewY + designerViewH - designerPanH));
+  }
+
+  designerSVG.addEventListener('mousedown', (e) => {
+    if (selectedCurve && e.target === selectedCurve) {
+      dragCurve = selectedCurve;
+      dragCurveStart.x = e.clientX;
+      dragCurveStart.y = e.clientY;
+      dragCurveStart.origD = selectedCurve.getAttribute('d') || "";
+      designerSVG.style.cursor = 'grab';
+      e.stopPropagation();
+    }
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDesignerPanning) return;
+    const dx = (e.clientX - designerPanStart.x) * (designerPanW / designerSVG.clientWidth);
+    const dy = (e.clientY - designerPanStart.y) * (designerPanH / designerSVG.clientHeight);
+    designerPanX -= dx;
+    designerPanY -= dy;
+    designerPanStart = { x: e.clientX, y: e.clientY };
+    setDesignerZoom(designerZoomLevel);
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDesignerPanning = false;
+    designerSVG.style.cursor = '';
+    editingCurve = null;
+    editingPointIndex = null;
+    if (dragCurve) {
+      dragCurve = null;
+      designerSVG.style.cursor = '';
+    }
+  });
+
+  designerSVG.addEventListener('mouseleave', () => {
+    if (dragCurve) {
+      dragCurve = null;
+      designerSVG.style.cursor = '';
+    }
+  });
+
+  // --- Designer Mouse Wheel & Touchpad Zoom ---
+  designerSVG.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const direction = e.deltaY < 0 ? 1 : -1;
+    const rect = designerSVG.getBoundingClientRect();
+    const mouseX = ((e.clientX - rect.left) / rect.width) * designerPanW + designerPanX;
+    const mouseY = ((e.clientY - rect.top) / rect.height) * designerPanH + designerPanY;
+    setDesignerZoom(designerZoomLevel + direction * designerZoomStep, mouseX, mouseY);
+  }, { passive: false });
+
+  // --- Curve Editing Handles ---
+  function showCurveHandles(curve: SVGPathElement) {
+    curveHandles.forEach(h => h.remove());
+    curveHandles = [];
+    const match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(curve.getAttribute('d') || "");
+    if (!match) return;
+    const points = [
+      { x: +match[1], y: +match[2] },
+      { x: +match[3], y: +match[4] },
+      { x: +match[5], y: +match[6] }
+    ];
+    points.forEach((pt, idx) => {
+      const handle = document.createElementNS(svgNS, 'circle');
+      handle.setAttribute('cx', pt.x.toString());
+      handle.setAttribute('cy', pt.y.toString());
+      handle.setAttribute('r', '6');
+      handle.setAttribute('fill', idx === 1 ? '#ff9800' : '#2196f3');
+      handle.style.cursor = 'pointer';
+      designerSVG.appendChild(handle);
+      curveHandles.push(handle);
+      handle.addEventListener('mousedown', (e) => {
+        editingCurve = curve;
+        editingPointIndex = idx;
+        e.stopPropagation();
+      });
+    });
+  }
+  function removeCurveHandles() {
+    curveHandles.forEach(h => h.remove());
+    curveHandles = [];
+    editingCurve = null;
+    editingPointIndex = null;
+  }
+
+  // --- Drawing curve button ---
+  drawCurveBtn.addEventListener('click', () => {
+    drawCurveMode = !drawCurveMode;
+    if (drawCurveMode) {
+      drawCurveBtn.textContent = "Drawing Curve...";
+      drawCurveBtn.style.background = "#2196f3";
+      drawCurveBtn.style.color = "#fff";
+    } else {
+      drawCurveBtn.textContent = "Draw Curve";
+      drawCurveBtn.style.background = "";
+      drawCurveBtn.style.color = "";
+    }
+    curvePoints = [];
+    if (tempCurve) {
+      tempCurve.remove();
+      tempCurve = null;
+    }
+    curvePointCircles.forEach(c => c.remove());
+    curvePointCircles = [];
+    removeCurveHandles();
+  });
+
+  // --- Designer SVG click for curve points and selection ---
+  designerSVG.addEventListener('click', (e) => {
+    // --- Draw Curve Mode ---
+    if (drawCurveMode) {
+      const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+      curvePoints.push({ x: svgCoords.x, y: svgCoords.y });
+      const pointCircle = document.createElementNS(svgNS, 'circle');
+      pointCircle.setAttribute('cx', svgCoords.x.toString());
+      pointCircle.setAttribute('cy', svgCoords.y.toString());
+      pointCircle.setAttribute('r', '2');
+      pointCircle.setAttribute('fill', '#808080');
+      designerSVG.appendChild(pointCircle);
+      curvePointCircles.push(pointCircle);
+      if (curvePoints.length === 3) {
+        const [p0, p1, p2] = curvePoints;
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', `M ${p0.x} ${p0.y} Q ${p1.x} ${p1.y} ${p2.x} ${p2.y}`);
+        path.setAttribute('stroke', '#000');
+        path.setAttribute('stroke-width', '2');
+        path.setAttribute('fill', 'none');
+        designerSVG.appendChild(path);
+        if (tempCurve) {
+          tempCurve.remove();
+          tempCurve = null;
+        }
+        curvePointCircles.forEach(c => c.remove());
+        curvePointCircles = [];
+        curvePoints = [];
+        drawCurveMode = false;
+        drawCurveBtn.textContent = "Draw Curve";
+        drawCurveBtn.style.background = "";
+        drawCurveBtn.style.color = "";
+        tempCurve = null;
+      } else if (curvePoints.length === 2) {
+        if (!tempCurve) {
+          tempCurve = document.createElementNS(svgNS, 'path');
+          tempCurve.setAttribute('stroke', '#808080');
+          tempCurve.setAttribute('stroke-width', '2');
+          tempCurve.setAttribute('fill', 'none');
+          designerSVG.appendChild(tempCurve);
+        }
+      }
+      return;
+    }
+    // --- Curve Selection Mode ---
+    if (!addMode && e.target instanceof SVGPathElement) {
+      if (selectedCurve) {
+        selectedCurve.setAttribute('stroke', '#000');
+        selectedCurve.setAttribute('stroke-width', '2');
+      }
+      selectedCurve = e.target as SVGPathElement;
+      selectedCurve.setAttribute('stroke', '#f44336');
+      selectedCurve.setAttribute('stroke-width', '4');
+      removeCurveHandles();
+      showCurveHandles(selectedCurve);
+      if (selectedDesignerSeat) {
+        selectedDesignerSeat.setAttribute('stroke', '#222');
+        selectedDesignerSeat = null;
+        seatIdInput.value = '';
+        if (rotationHandle) {
+          rotationHandle.remove();
+          rotationHandle = null;
+        }
+      }
+      return;
+    }
+    // --- Deselect curve if clicking on blank SVG ---
+    if (!addMode && e.target === designerSVG) {
+      removeCurveHandles();
+      if (selectedCurve) {
+        selectedCurve.setAttribute('stroke', '#000');
+        selectedCurve.setAttribute('stroke-width', '2');
+        selectedCurve = null;
+      }
+    }
+  });
+
+  // Live preview for curve while drawing
+  designerSVG.addEventListener('mousemove', (e) => {
+    if (drawCurveMode && curvePoints.length === 2 && tempCurve) {
+      const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+      const [p0, p1] = curvePoints;
+      tempCurve.setAttribute('d', `M ${p0.x} ${p0.y} Q ${p1.x} ${p1.y} ${svgCoords.x} ${svgCoords.y}`);
+    }
+  });
+
+  // --- Curve Editing: Drag handles to edit curve ---
+  window.addEventListener('mousemove', (e) => {
+    if (editingCurve && editingPointIndex !== null) {
+      const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+      const match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(editingCurve.getAttribute('d') || "");
+      if (!match) return;
+      const points = [
+        { x: +match[1], y: +match[2] },
+        { x: +match[3], y: +match[4] },
+        { x: +match[5], y: +match[6] }
+      ];
+      points[editingPointIndex] = { x: svgCoords.x, y: svgCoords.y };
+      editingCurve.setAttribute('d', `M ${points[0].x} ${points[0].y} Q ${points[1].x} ${points[1].y} ${points[2].x} ${points[2].y}`);
+      curveHandles[editingPointIndex].setAttribute('cx', svgCoords.x.toString());
+      curveHandles[editingPointIndex].setAttribute('cy', svgCoords.y.toString());
+    }
+  });
+
+  // --- Curve Dragging ---
+  window.addEventListener('mousemove', (e) => {
+    if (dragCurve) {
+      const dx = e.clientX - dragCurveStart.x;
+      const dy = e.clientY - dragCurveStart.y;
+      const match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(dragCurveStart.origD);
+      if (!match) return;
+      let [_, x0, y0, x1, y1, x2, y2] = match.map(Number);
+      const svgRect = designerSVG.getBoundingClientRect();
+      const scaleX = (designerPanW / svgRect.width);
+      const scaleY = (designerPanH / svgRect.height);
+      let svgDx = dx * scaleX;
+      let svgDy = dy * scaleY;
+      const minX = Math.min(x0 + svgDx, x1 + svgDx, x2 + svgDx);
+      const minY = Math.min(y0 + svgDy, y1 + svgDy, y2 + svgDy);
+      const maxX = Math.max(x0 + svgDx, x1 + svgDx, x2 + svgDx);
+      const maxY = Math.max(y0 + svgDy, y1 + svgDy, y2 + svgDy);
+      let clampDx = svgDx, clampDy = svgDy;
+      if (minX < designerPanX) clampDx += designerPanX - minX;
+      if (maxX > designerPanX + designerPanW) clampDx -= maxX - (designerPanX + designerPanW);
+      if (minY < designerPanY) clampDy += designerPanY - minY;
+      if (maxY > designerPanY + designerPanH) clampDy -= maxY - (designerPanY + designerPanH);
+      dragCurve.setAttribute(
+        'd',
+        `M ${x0 + clampDx} ${y0 + clampDy} Q ${x1 + clampDx} ${y1 + clampDy} ${x2 + clampDx} ${y2 + clampDy}`
+      );
+      // Also update handles if curve is selected and being dragged
+      if (selectedCurve === dragCurve && curveHandles.length === 3) {
+        const newPoints = [
+          { x: x0 + clampDx, y: y0 + clampDy },
+          { x: x1 + clampDx, y: y1 + clampDy },
+          { x: x2 + clampDx, y: y2 + clampDy }
+        ];
+        curveHandles.forEach((h, idx) => {
+          h.setAttribute('cx', newPoints[idx].x.toString());
+          h.setAttribute('cy', newPoints[idx].y.toString());
+        });
+      }
+    }
+  });
+
+  // --- Delete curve button ---
+  deleteCurveBtn.addEventListener('click', () => {
+    if (selectedCurve && designerSVG.contains(selectedCurve)) {
+      designerSVG.removeChild(selectedCurve);
+      removeCurveHandles();
+      selectedCurve = null;
+    }
+  });
+
   // Show rotation handle next to the seat
   function showRotationHandle(rect: SVGRectElement) {
     if (rotationHandle) {
@@ -64,7 +396,7 @@
       rotationHandle = null;
     }
     const group = rect.parentNode as SVGGElement;
-  
+
     // Get seat center in local group coordinates
     const x = parseFloat(rect.getAttribute('x') || "0");
     const y = parseFloat(rect.getAttribute('y') || "0");
@@ -72,7 +404,7 @@
     const h = parseFloat(rect.getAttribute('height') || "0");
     const localCx = x + w / 2;
     const localCy = y + h / 2;
-  
+
     // Get seat center in SVG coordinates (for handle position)
     let cx = localCx, cy = localCy;
     const ctm = group.getCTM();
@@ -84,19 +416,19 @@
       cx = svgPt.x;
       cy = svgPt.y;
     }
-  
+
     // Get current group rotation in degrees
     const transform = group.getAttribute('transform') || '';
     const match = /rotate\((-?\d+(\.\d+)?)/.exec(transform);
     const angle = match ? parseFloat(match[1]) : 0;
     const rad = (angle * Math.PI) / 180;
-  
+
     // Offset: 25px at 45° from the seat center, rotated with the seat
     const offset = 25;
     const baseAngle = Math.PI / 4; // 45 degrees
     const handleX = cx + offset * Math.cos(baseAngle + rad);
     const handleY = cy + offset * Math.sin(baseAngle + rad);
-  
+
     rotationHandle = document.createElementNS(svgNS, 'circle');
     rotationHandle.setAttribute('cx', handleX.toString());
     rotationHandle.setAttribute('cy', handleY.toString());
@@ -104,7 +436,7 @@
     rotationHandle.setAttribute('fill', '#000');
     rotationHandle.style.cursor = 'pointer';
     designerSVG.appendChild(rotationHandle);
-  
+
     rotationHandle.onmousedown = (e) => {
       e.stopPropagation();
       rotatingGroup = group;
@@ -120,7 +452,7 @@
       document.body.style.cursor = 'crosshair';
     };
   }
-  
+
   // Listen for mousemove/mouseup on window for rotation
   window.addEventListener('mousemove', (e) => {
     if (rotatingGroup) {
@@ -133,7 +465,7 @@
       const h = parseFloat(rect.getAttribute('height') || "0");
       const localCx = x + w / 2;
       const localCy = y + h / 2;
-  
+
       // Get seat center in SVG coordinates (for mouse angle and handle)
       let cx = localCx, cy = localCy;
       const ctm = rotatingGroup.getCTM();
@@ -145,19 +477,19 @@
         cx = svgPt.x;
         cy = svgPt.y;
       }
-  
+
       const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
       const mouseAngle = Math.atan2(svgCoords.y - cy, svgCoords.x - cx) * 180 / Math.PI;
       let newAngle = startAngle + (mouseAngle - startMouseAngle);
       newAngle = ((newAngle % 360) + 360) % 360;
-  
+
       // Keep any translation
       const transform = rotatingGroup.getAttribute('transform') || '';
       const transMatch = /translate\(([^,]+),([^)]+)\)/.exec(transform);
       let transPart = '';
       if (transMatch) transPart = `translate(${transMatch[1]},${transMatch[2]}) `;
       rotatingGroup.setAttribute('transform', `${transPart}rotate(${newAngle} ${localCx} ${localCy})`);
-  
+
       // Move handle visually (in SVG coordinates)
       if (rotationHandle) {
         const rad = (newAngle * Math.PI) / 180;
@@ -167,14 +499,63 @@
         rotationHandle.setAttribute('cy', (cy + offset * Math.sin(baseAngle + rad)).toString());
       }
     }
+
+    // Curve dragging
+    if (dragCurve) {
+      const dx = e.clientX - dragCurveStart.x;
+      const dy = e.clientY - dragCurveStart.y;
+
+      // Parse original path (quadratic Bezier: M x0 y0 Q x1 y1 x2 y2)
+      const match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(dragCurveStart.origD);
+      if (!match) return;
+      let [_, x0, y0, x1, y1, x2, y2] = match.map(Number);
+
+      // Convert dx/dy from client to SVG coordinates
+      const svgRect = designerSVG.getBoundingClientRect();
+      const scaleX = (designerPanW / svgRect.width);
+      const scaleY = (designerPanH / svgRect.height);
+      let svgDx = dx * scaleX;
+      let svgDy = dy * scaleY;
+
+      // Clamp: compute bounding box after move
+      const minX = Math.min(x0 + svgDx, x1 + svgDx, x2 + svgDx);
+      const minY = Math.min(y0 + svgDy, y1 + svgDy, y2 + svgDy);
+      const maxX = Math.max(x0 + svgDx, x1 + svgDx, x2 + svgDx);
+      const maxY = Math.max(y0 + svgDy, y1 + svgDy, y2 + svgDy);
+
+      // Clamp so curve stays inside SVG viewBox
+      let clampDx = svgDx, clampDy = svgDy;
+      if (minX < designerPanX) clampDx += designerPanX - minX;
+      if (maxX > designerPanX + designerPanW) clampDx -= maxX - (designerPanX + designerPanW);
+      if (minY < designerPanY) clampDy += designerPanY - minY;
+      if (maxY > designerPanY + designerPanH) clampDy -= maxY - (designerPanY + designerPanH);
+
+      // Update path
+      dragCurve.setAttribute(
+        'd',
+        `M ${x0 + clampDx} ${y0 + clampDy} Q ${x1 + clampDx} ${y1 + clampDy} ${x2 + clampDx} ${y2 + clampDy}`
+      );
+    }
   });
-  
+
   window.addEventListener('mouseup', () => {
     if (rotatingGroup) {
       rotatingGroup = null;
       document.body.style.cursor = '';
+      justRotated = true; // to not let new seat creation interfere
     }
-  }); 
+    if (dragCurve) {
+      dragCurve = null;
+      designerSVG.style.cursor = '';
+    }
+  });
+
+  designerSVG.addEventListener('mouseleave', () => {
+    if (dragCurve) {
+      dragCurve = null;
+      designerSVG.style.cursor = '';
+    }
+  });
 
   // --- Original View ---
   let originalViewBox = seatSVG.getAttribute('viewBox');
@@ -185,13 +566,13 @@
   let [viewX, viewY, viewW, viewH] = originalViewBox.split(' ').map(Number);
 
   let panX = viewX, panY = viewY, panW = viewW, panH = viewH;
-  
+
   // --- Zoom Logic ---
   function setUserZoom(zoom: number, centerX?: number, centerY?: number) {
     userZoomLevel = Math.max(minZoom, Math.min(maxZoom, zoom));
     const newW = viewW / userZoomLevel;
     const newH = viewH / userZoomLevel;
-  
+
     if (userZoomLevel === minZoom) {
       // At min zoom, always reset to original viewBox
       panX = viewX;
@@ -212,11 +593,11 @@
     }
     seatSVG.setAttribute('viewBox', `${panX} ${panY} ${panW} ${panH}`);
   }
-  
+
   // --- Pan Logic ---
   let isPanning = false;
   let panStart = { x: 0, y: 0 };
-  
+
   seatSVG.addEventListener('mousedown', (e) => {
     if ((e.target as Element).tagName === 'rect') return;
     isPanning = true;
@@ -233,7 +614,7 @@
     panStart = { x: e.clientX, y: e.clientY };
     setUserZoom(userZoomLevel); // Always use setUserZoom to update viewBox and clamp
   });
-  
+
   function clampPan() {
     // Clamp panX and panY so the viewBox stays within the SVG bounds
     if (panW > viewW) panX = viewX;
@@ -280,7 +661,7 @@
     isPanning = false;
     lastTouchDist = 0;
   });
-  
+
   // --- Mouse Wheel & Touchpad Zoom ---
   seatSVG.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -290,7 +671,7 @@
     const mouseY = ((e.clientY - rect.top) / rect.height) * panH + panY;
     setUserZoom(userZoomLevel + direction * zoomStep, mouseX, mouseY);
   }, { passive: false });
-  
+
   // --- Reset Button ---
   zoomResetBtn.addEventListener('click', () => {
     panX = viewX;
@@ -335,14 +716,14 @@
   }
 
   // Save current SVG layout
-    function saveLayout(svg: SVGSVGElement, promptMsg: string, prefix: string) {
+  function saveLayout(svg: SVGSVGElement, promptMsg: string, prefix: string) {
     const layoutName = prompt(promptMsg);
     if (!layoutName) return;
     localStorage.setItem(prefix + layoutName, svg.outerHTML);
     updateSavedLayoutsDropdown();
     alert('Layout saved!');
   }
-  
+
   // Usage:
   function saveLayoutHandler(svg: SVGSVGElement, promptMsg: string, prefix: string) {
     return () => saveLayout(svg, promptMsg, prefix);
@@ -401,13 +782,13 @@
   });
 
   // --- SVG Upload Logic ---
-  svgUpload.addEventListener('change', function(event: Event) {
+  svgUpload.addEventListener('change', function (event: Event) {
     seatMapType = 'svg';
     const input = event.target as HTMLInputElement;
     const file = input.files && input.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = function(e: ProgressEvent<FileReader>) {
+    reader.onload = function (e: ProgressEvent<FileReader>) {
       seatSVG.innerHTML = '';
       lastSVGString = e.target?.result as string;
       const parser = new DOMParser();
@@ -444,7 +825,7 @@
       ids.add(id.toLowerCase());
     });
   }
-  
+
   function countAvailableSeats(): number {
     const seatRects = seatSVG.querySelectorAll('rect');
     let count = 0;
@@ -491,17 +872,17 @@
 
   updateSavedLayoutsDropdown();
 
-    seatSVG.addEventListener('click', (e) => {
-      const target = e.target as SVGRectElement;
-      if (
-        target.tagName === 'rect' &&
-        target.hasAttribute('data-seat-id') &&
-        !occupiedSeats.has(target.getAttribute('data-seat-id')!)
-      ) {
-        const seatId = target.getAttribute('data-seat-id')!;
-        toggleSVGSeat(seatId, target);
-      }
-    });
+  seatSVG.addEventListener('click', (e) => {
+    const target = e.target as SVGRectElement;
+    if (
+      target.tagName === 'rect' &&
+      target.hasAttribute('data-seat-id') &&
+      !occupiedSeats.has(target.getAttribute('data-seat-id')!)
+    ) {
+      const seatId = target.getAttribute('data-seat-id')!;
+      toggleSVGSeat(seatId, target);
+    }
+  });
 
   // --- Seat Selection Logic ---
   function attachSVGSeatListeners(): void {
@@ -559,7 +940,7 @@
     updateUI();
     alert(`You can now select up to ${maxSelectableSeats} seats.`);
     return true;
- }
+  }
 
   function toggleSVGSeat(seatId: string, rect: SVGRectElement): void {
     if (maxSelectableSeats === null) {
@@ -653,9 +1034,9 @@
   }
 
   // --- Designer Logic ---
-    
-    let dragStart = { x: 0, y: 0, tx: 0, ty: 0 };
-  
+
+  let dragStart = { x: 0, y: 0, tx: 0, ty: 0 };
+
   function makeDraggable(group: SVGGElement) {
     group.addEventListener('mousedown', (e: MouseEvent) => {
       justDragged = false;
@@ -673,13 +1054,20 @@
       e.stopPropagation();
     });
   }
-  
+
   designerSVG.addEventListener('mousemove', (e: MouseEvent) => {
     if (dragTarget && roleSelect.value === 'admin') {
       const dx = e.clientX - dragStart.x;
       const dy = e.clientY - dragStart.y;
-      const tx = dragStart.tx + dx;
-      const ty = dragStart.ty + dy;
+      let tx = dragStart.tx + dx;
+      let ty = dragStart.ty + dy;
+
+      // Clamp tx, ty to SVG bounds
+      const svgRect = designerSVG.getBoundingClientRect();
+      const groupRect = dragTarget.getBBox();
+      tx = Math.max(0, Math.min(tx, svgRect.width - groupRect.width));
+      ty = Math.max(0, Math.min(ty, svgRect.height - groupRect.height));
+
       // Keep any rotation
       const transform = dragTarget.getAttribute('transform') || '';
       const rotMatch = /rotate\(([^)]+)\)/.exec(transform);
@@ -692,14 +1080,14 @@
       }
     }
   });
-  
+
   designerSVG.addEventListener('mouseup', () => {
     if (dragTarget) {
       justDragged = true;
     }
     dragTarget = null;
   });
-  
+
   designerSVG.addEventListener('mouseleave', () => {
     if (dragTarget) {
       justDragged = true;
@@ -721,12 +1109,12 @@
       }
       if (justRotated) {
         justRotated = false; // Reset the flag
-        return; 
+        return;
       }
-      if (isRotating){
+      if (isRotating) {
         isRotating = false; // Stop rotation on click
         return; // Ignore clicks while rotating
-      } 
+      }
       if (!addMode) {
         if (e.target === designerSVG) {
           if (selectedDesignerSeat) selectedDesignerSeat.setAttribute('stroke', '#222');
@@ -749,7 +1137,7 @@
       rect.setAttribute('height', '15');
       rect.setAttribute('fill', '#49D44B');
       rect.setAttribute('stroke', '#222');
-      rect.setAttribute('data-seat-id', getNextAvailableDesignerSeatId());      
+      rect.setAttribute('data-seat-id', getNextAvailableDesignerSeatId());
       rect.style.cursor = 'pointer';
       rect.addEventListener('click', (evt) => {
         evt.stopPropagation();

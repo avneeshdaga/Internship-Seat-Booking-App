@@ -6,7 +6,7 @@
   <style>
     body {
       font-family: 'Times New Roman', Times, serif;
-      padding: 40px;
+      padding: 10px;
       text-align: center;
     }
     svg {
@@ -46,12 +46,15 @@
     <!-- Visual Designer Section -->
     <fieldset style="margin-bottom: 1em;">
       <legend>Design Layouts</legend>
+      <button id="drawCurveBtn">Draw Curve</button>
+      <button id="deleteCurveBtn">Delete Curve</button>
       <button id="addSeatBtn">Add Seat</button>
       <button id="deleteSeatBtn">Delete Selected Seat</button>
       <label>Seat ID: <input id="seatIdInput" type="text"></label>
       <button id="updateSeatIdBtn">Update Seat ID</button>
       <br>
-      <svg id="designerSVG" width="600" height="300" style="border:1px solid #888; background:#f8f8f8; margin-top:10px;"></svg>
+      <svg id="designerSVG" width="1000" height="500" style="border:1px solid #888; background:#f8f8f8; margin-top:10px;"></svg>
+      <button id="designerZoomResetBtn">Reset Designer Zoom</button>
       <button id="saveDesignerLayoutBtn" type="button">Save Designer Layout</button>
     </fieldset>
 

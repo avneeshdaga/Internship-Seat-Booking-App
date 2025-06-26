@@ -32,6 +32,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var isRotating = false;
     var justRotated = false;
     var justDragged = false;
+    // Curve Drawing
+    var drawCurveMode = false;
+    var curvePoints = [];
+    var tempCurve = null;
+    var curvePointCircles = [];
+    var selectedCurve = null;
+    var curveHandles = [];
+    var editingCurve = null;
+    var editingPointIndex = null;
     // --- DOM Elements ---
     var roleSelect = document.getElementById('roleSelect');
     var adminPanel = document.getElementById('adminPanel');
@@ -57,6 +66,319 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn');
     var saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn');
     var designerSVG = document.getElementById('designerSVG');
+    var drawCurveBtn = document.getElementById('drawCurveBtn');
+    var deleteCurveBtn = document.getElementById('deleteCurveBtn');
+    var designerZoomResetBtn = document.getElementById('designerZoomResetBtn');
+    // Designer SVG pan/zoom state
+    var designerOriginalViewBox = designerSVG.getAttribute('viewBox');
+    if (!designerOriginalViewBox) {
+        designerOriginalViewBox = "0 0 ".concat(designerSVG.width.baseVal.value, " ").concat(designerSVG.height.baseVal.value);
+        designerSVG.setAttribute('viewBox', designerOriginalViewBox);
+    }
+    var _a = designerOriginalViewBox.split(' ').map(Number), designerViewX = _a[0], designerViewY = _a[1], designerViewW = _a[2], designerViewH = _a[3];
+    var designerPanX = designerViewX, designerPanY = designerViewY, designerPanW = designerViewW, designerPanH = designerViewH;
+    var designerZoomLevel = 1;
+    var designerMinZoom = 1;
+    var designerMaxZoom = 3;
+    var designerZoomStep = 0.04;
+    var isDesignerPanning = false;
+    var designerPanStart = { x: 0, y: 0 };
+    var dragCurve = null;
+    var dragCurveStart = { x: 0, y: 0, origD: "" };
+    designerZoomResetBtn.addEventListener('click', function () {
+        designerPanX = designerViewX;
+        designerPanY = designerViewY;
+        designerPanW = designerViewW;
+        designerPanH = designerViewH;
+        setDesignerZoom(1);
+    });
+    // --- Designer SVG Zoom/Pan Logic ---
+    function setDesignerZoom(zoom, centerX, centerY) {
+        designerZoomLevel = Math.max(designerMinZoom, Math.min(designerMaxZoom, zoom));
+        var newW = designerViewW / designerZoomLevel;
+        var newH = designerViewH / designerZoomLevel;
+        if (designerZoomLevel === designerMinZoom) {
+            designerPanX = designerViewX;
+            designerPanY = designerViewY;
+            designerPanW = designerViewW;
+            designerPanH = designerViewH;
+        }
+        else {
+            if (typeof centerX === 'number' && typeof centerY === 'number') {
+                var zoomRatio = newW / designerPanW;
+                designerPanX = centerX - (centerX - designerPanX) * zoomRatio;
+                designerPanY = centerY - (centerY - designerPanY) * zoomRatio;
+            }
+            designerPanW = newW;
+            designerPanH = newH;
+            clampDesignerPan();
+        }
+        designerSVG.setAttribute('viewBox', "".concat(designerPanX, " ").concat(designerPanY, " ").concat(designerPanW, " ").concat(designerPanH));
+    }
+    function clampDesignerPan() {
+        if (designerPanW > designerViewW)
+            designerPanX = designerViewX;
+        else
+            designerPanX = Math.max(designerViewX, Math.min(designerPanX, designerViewX + designerViewW - designerPanW));
+        if (designerPanH > designerViewH)
+            designerPanY = designerViewY;
+        else
+            designerPanY = Math.max(designerViewY, Math.min(designerPanY, designerViewY + designerViewH - designerPanH));
+    }
+    designerSVG.addEventListener('mousedown', function (e) {
+        if (selectedCurve && e.target === selectedCurve) {
+            dragCurve = selectedCurve;
+            dragCurveStart.x = e.clientX;
+            dragCurveStart.y = e.clientY;
+            dragCurveStart.origD = selectedCurve.getAttribute('d') || "";
+            designerSVG.style.cursor = 'grab';
+            e.stopPropagation();
+        }
+    });
+    window.addEventListener('mousemove', function (e) {
+        if (!isDesignerPanning)
+            return;
+        var dx = (e.clientX - designerPanStart.x) * (designerPanW / designerSVG.clientWidth);
+        var dy = (e.clientY - designerPanStart.y) * (designerPanH / designerSVG.clientHeight);
+        designerPanX -= dx;
+        designerPanY -= dy;
+        designerPanStart = { x: e.clientX, y: e.clientY };
+        setDesignerZoom(designerZoomLevel);
+    });
+    window.addEventListener('mouseup', function () {
+        isDesignerPanning = false;
+        designerSVG.style.cursor = '';
+        editingCurve = null;
+        editingPointIndex = null;
+        if (dragCurve) {
+            dragCurve = null;
+            designerSVG.style.cursor = '';
+        }
+    });
+    designerSVG.addEventListener('mouseleave', function () {
+        if (dragCurve) {
+            dragCurve = null;
+            designerSVG.style.cursor = '';
+        }
+    });
+    // --- Designer Mouse Wheel & Touchpad Zoom ---
+    designerSVG.addEventListener('wheel', function (e) {
+        e.preventDefault();
+        var direction = e.deltaY < 0 ? 1 : -1;
+        var rect = designerSVG.getBoundingClientRect();
+        var mouseX = ((e.clientX - rect.left) / rect.width) * designerPanW + designerPanX;
+        var mouseY = ((e.clientY - rect.top) / rect.height) * designerPanH + designerPanY;
+        setDesignerZoom(designerZoomLevel + direction * designerZoomStep, mouseX, mouseY);
+    }, { passive: false });
+    // --- Curve Editing Handles ---
+    function showCurveHandles(curve) {
+        curveHandles.forEach(function (h) { return h.remove(); });
+        curveHandles = [];
+        var match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(curve.getAttribute('d') || "");
+        if (!match)
+            return;
+        var points = [
+            { x: +match[1], y: +match[2] },
+            { x: +match[3], y: +match[4] },
+            { x: +match[5], y: +match[6] }
+        ];
+        points.forEach(function (pt, idx) {
+            var handle = document.createElementNS(svgNS, 'circle');
+            handle.setAttribute('cx', pt.x.toString());
+            handle.setAttribute('cy', pt.y.toString());
+            handle.setAttribute('r', '6');
+            handle.setAttribute('fill', idx === 1 ? '#ff9800' : '#2196f3');
+            handle.style.cursor = 'pointer';
+            designerSVG.appendChild(handle);
+            curveHandles.push(handle);
+            handle.addEventListener('mousedown', function (e) {
+                editingCurve = curve;
+                editingPointIndex = idx;
+                e.stopPropagation();
+            });
+        });
+    }
+    function removeCurveHandles() {
+        curveHandles.forEach(function (h) { return h.remove(); });
+        curveHandles = [];
+        editingCurve = null;
+        editingPointIndex = null;
+    }
+    // --- Drawing curve button ---
+    drawCurveBtn.addEventListener('click', function () {
+        drawCurveMode = !drawCurveMode;
+        if (drawCurveMode) {
+            drawCurveBtn.textContent = "Drawing Curve...";
+            drawCurveBtn.style.background = "#2196f3";
+            drawCurveBtn.style.color = "#fff";
+        }
+        else {
+            drawCurveBtn.textContent = "Draw Curve";
+            drawCurveBtn.style.background = "";
+            drawCurveBtn.style.color = "";
+        }
+        curvePoints = [];
+        if (tempCurve) {
+            tempCurve.remove();
+            tempCurve = null;
+        }
+        curvePointCircles.forEach(function (c) { return c.remove(); });
+        curvePointCircles = [];
+        removeCurveHandles();
+    });
+    // --- Designer SVG click for curve points and selection ---
+    designerSVG.addEventListener('click', function (e) {
+        // --- Draw Curve Mode ---
+        if (drawCurveMode) {
+            var svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            curvePoints.push({ x: svgCoords.x, y: svgCoords.y });
+            var pointCircle = document.createElementNS(svgNS, 'circle');
+            pointCircle.setAttribute('cx', svgCoords.x.toString());
+            pointCircle.setAttribute('cy', svgCoords.y.toString());
+            pointCircle.setAttribute('r', '2');
+            pointCircle.setAttribute('fill', '#808080');
+            designerSVG.appendChild(pointCircle);
+            curvePointCircles.push(pointCircle);
+            if (curvePoints.length === 3) {
+                var p0 = curvePoints[0], p1 = curvePoints[1], p2 = curvePoints[2];
+                var path = document.createElementNS(svgNS, 'path');
+                path.setAttribute('d', "M ".concat(p0.x, " ").concat(p0.y, " Q ").concat(p1.x, " ").concat(p1.y, " ").concat(p2.x, " ").concat(p2.y));
+                path.setAttribute('stroke', '#000');
+                path.setAttribute('stroke-width', '2');
+                path.setAttribute('fill', 'none');
+                designerSVG.appendChild(path);
+                if (tempCurve) {
+                    tempCurve.remove();
+                    tempCurve = null;
+                }
+                curvePointCircles.forEach(function (c) { return c.remove(); });
+                curvePointCircles = [];
+                curvePoints = [];
+                drawCurveMode = false;
+                drawCurveBtn.textContent = "Draw Curve";
+                drawCurveBtn.style.background = "";
+                drawCurveBtn.style.color = "";
+                tempCurve = null;
+            }
+            else if (curvePoints.length === 2) {
+                if (!tempCurve) {
+                    tempCurve = document.createElementNS(svgNS, 'path');
+                    tempCurve.setAttribute('stroke', '#808080');
+                    tempCurve.setAttribute('stroke-width', '2');
+                    tempCurve.setAttribute('fill', 'none');
+                    designerSVG.appendChild(tempCurve);
+                }
+            }
+            return;
+        }
+        // --- Curve Selection Mode ---
+        if (!addMode && e.target instanceof SVGPathElement) {
+            if (selectedCurve) {
+                selectedCurve.setAttribute('stroke', '#000');
+                selectedCurve.setAttribute('stroke-width', '2');
+            }
+            selectedCurve = e.target;
+            selectedCurve.setAttribute('stroke', '#f44336');
+            selectedCurve.setAttribute('stroke-width', '4');
+            removeCurveHandles();
+            showCurveHandles(selectedCurve);
+            if (selectedDesignerSeat) {
+                selectedDesignerSeat.setAttribute('stroke', '#222');
+                selectedDesignerSeat = null;
+                seatIdInput.value = '';
+                if (rotationHandle) {
+                    rotationHandle.remove();
+                    rotationHandle = null;
+                }
+            }
+            return;
+        }
+        // --- Deselect curve if clicking on blank SVG ---
+        if (!addMode && e.target === designerSVG) {
+            removeCurveHandles();
+            if (selectedCurve) {
+                selectedCurve.setAttribute('stroke', '#000');
+                selectedCurve.setAttribute('stroke-width', '2');
+                selectedCurve = null;
+            }
+        }
+    });
+    // Live preview for curve while drawing
+    designerSVG.addEventListener('mousemove', function (e) {
+        if (drawCurveMode && curvePoints.length === 2 && tempCurve) {
+            var svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            var p0 = curvePoints[0], p1 = curvePoints[1];
+            tempCurve.setAttribute('d', "M ".concat(p0.x, " ").concat(p0.y, " Q ").concat(p1.x, " ").concat(p1.y, " ").concat(svgCoords.x, " ").concat(svgCoords.y));
+        }
+    });
+    // --- Curve Editing: Drag handles to edit curve ---
+    window.addEventListener('mousemove', function (e) {
+        if (editingCurve && editingPointIndex !== null) {
+            var svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            var match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(editingCurve.getAttribute('d') || "");
+            if (!match)
+                return;
+            var points = [
+                { x: +match[1], y: +match[2] },
+                { x: +match[3], y: +match[4] },
+                { x: +match[5], y: +match[6] }
+            ];
+            points[editingPointIndex] = { x: svgCoords.x, y: svgCoords.y };
+            editingCurve.setAttribute('d', "M ".concat(points[0].x, " ").concat(points[0].y, " Q ").concat(points[1].x, " ").concat(points[1].y, " ").concat(points[2].x, " ").concat(points[2].y));
+            curveHandles[editingPointIndex].setAttribute('cx', svgCoords.x.toString());
+            curveHandles[editingPointIndex].setAttribute('cy', svgCoords.y.toString());
+        }
+    });
+    // --- Curve Dragging ---
+    window.addEventListener('mousemove', function (e) {
+        if (dragCurve) {
+            var dx = e.clientX - dragCurveStart.x;
+            var dy = e.clientY - dragCurveStart.y;
+            var match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(dragCurveStart.origD);
+            if (!match)
+                return;
+            var _a = match.map(Number), _ = _a[0], x0 = _a[1], y0 = _a[2], x1 = _a[3], y1 = _a[4], x2 = _a[5], y2 = _a[6];
+            var svgRect = designerSVG.getBoundingClientRect();
+            var scaleX = (designerPanW / svgRect.width);
+            var scaleY = (designerPanH / svgRect.height);
+            var svgDx = dx * scaleX;
+            var svgDy = dy * scaleY;
+            var minX = Math.min(x0 + svgDx, x1 + svgDx, x2 + svgDx);
+            var minY = Math.min(y0 + svgDy, y1 + svgDy, y2 + svgDy);
+            var maxX = Math.max(x0 + svgDx, x1 + svgDx, x2 + svgDx);
+            var maxY = Math.max(y0 + svgDy, y1 + svgDy, y2 + svgDy);
+            var clampDx = svgDx, clampDy = svgDy;
+            if (minX < designerPanX)
+                clampDx += designerPanX - minX;
+            if (maxX > designerPanX + designerPanW)
+                clampDx -= maxX - (designerPanX + designerPanW);
+            if (minY < designerPanY)
+                clampDy += designerPanY - minY;
+            if (maxY > designerPanY + designerPanH)
+                clampDy -= maxY - (designerPanY + designerPanH);
+            dragCurve.setAttribute('d', "M ".concat(x0 + clampDx, " ").concat(y0 + clampDy, " Q ").concat(x1 + clampDx, " ").concat(y1 + clampDy, " ").concat(x2 + clampDx, " ").concat(y2 + clampDy));
+            // Also update handles if curve is selected and being dragged
+            if (selectedCurve === dragCurve && curveHandles.length === 3) {
+                var newPoints_1 = [
+                    { x: x0 + clampDx, y: y0 + clampDy },
+                    { x: x1 + clampDx, y: y1 + clampDy },
+                    { x: x2 + clampDx, y: y2 + clampDy }
+                ];
+                curveHandles.forEach(function (h, idx) {
+                    h.setAttribute('cx', newPoints_1[idx].x.toString());
+                    h.setAttribute('cy', newPoints_1[idx].y.toString());
+                });
+            }
+        }
+    });
+    // --- Delete curve button ---
+    deleteCurveBtn.addEventListener('click', function () {
+        if (selectedCurve && designerSVG.contains(selectedCurve)) {
+            designerSVG.removeChild(selectedCurve);
+            removeCurveHandles();
+            selectedCurve = null;
+        }
+    });
     // Show rotation handle next to the seat
     function showRotationHandle(rect) {
         if (rotationHandle) {
@@ -158,11 +480,55 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 rotationHandle.setAttribute('cy', (cy + offset * Math.sin(baseAngle + rad)).toString());
             }
         }
+        // Curve dragging
+        if (dragCurve) {
+            var dx = e.clientX - dragCurveStart.x;
+            var dy = e.clientY - dragCurveStart.y;
+            // Parse original path (quadratic Bezier: M x0 y0 Q x1 y1 x2 y2)
+            var match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(dragCurveStart.origD);
+            if (!match)
+                return;
+            var _a = match.map(Number), _ = _a[0], x0 = _a[1], y0 = _a[2], x1 = _a[3], y1 = _a[4], x2 = _a[5], y2 = _a[6];
+            // Convert dx/dy from client to SVG coordinates
+            var svgRect = designerSVG.getBoundingClientRect();
+            var scaleX = (designerPanW / svgRect.width);
+            var scaleY = (designerPanH / svgRect.height);
+            var svgDx = dx * scaleX;
+            var svgDy = dy * scaleY;
+            // Clamp: compute bounding box after move
+            var minX = Math.min(x0 + svgDx, x1 + svgDx, x2 + svgDx);
+            var minY = Math.min(y0 + svgDy, y1 + svgDy, y2 + svgDy);
+            var maxX = Math.max(x0 + svgDx, x1 + svgDx, x2 + svgDx);
+            var maxY = Math.max(y0 + svgDy, y1 + svgDy, y2 + svgDy);
+            // Clamp so curve stays inside SVG viewBox
+            var clampDx = svgDx, clampDy = svgDy;
+            if (minX < designerPanX)
+                clampDx += designerPanX - minX;
+            if (maxX > designerPanX + designerPanW)
+                clampDx -= maxX - (designerPanX + designerPanW);
+            if (minY < designerPanY)
+                clampDy += designerPanY - minY;
+            if (maxY > designerPanY + designerPanH)
+                clampDy -= maxY - (designerPanY + designerPanH);
+            // Update path
+            dragCurve.setAttribute('d', "M ".concat(x0 + clampDx, " ").concat(y0 + clampDy, " Q ").concat(x1 + clampDx, " ").concat(y1 + clampDy, " ").concat(x2 + clampDx, " ").concat(y2 + clampDy));
+        }
     });
     window.addEventListener('mouseup', function () {
         if (rotatingGroup) {
             rotatingGroup = null;
             document.body.style.cursor = '';
+            justRotated = true; // to not let new seat creation interfere
+        }
+        if (dragCurve) {
+            dragCurve = null;
+            designerSVG.style.cursor = '';
+        }
+    });
+    designerSVG.addEventListener('mouseleave', function () {
+        if (dragCurve) {
+            dragCurve = null;
+            designerSVG.style.cursor = '';
         }
     });
     // --- Original View ---
@@ -171,7 +537,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         originalViewBox = "0 0 ".concat(seatSVG.width.baseVal.value, " ").concat(seatSVG.height.baseVal.value);
         seatSVG.setAttribute('viewBox', originalViewBox);
     }
-    var _a = originalViewBox.split(' ').map(Number), viewX = _a[0], viewY = _a[1], viewW = _a[2], viewH = _a[3];
+    var _b = originalViewBox.split(' ').map(Number), viewX = _b[0], viewY = _b[1], viewW = _b[2], viewH = _b[3];
     var panX = viewX, panY = viewY, panW = viewW, panH = viewH;
     // --- Zoom Logic ---
     function setUserZoom(zoom, centerX, centerY) {
@@ -656,6 +1022,11 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             var dy = e.clientY - dragStart.y;
             var tx = dragStart.tx + dx;
             var ty = dragStart.ty + dy;
+            // Clamp tx, ty to SVG bounds
+            var svgRect = designerSVG.getBoundingClientRect();
+            var groupRect = dragTarget.getBBox();
+            tx = Math.max(0, Math.min(tx, svgRect.width - groupRect.width));
+            ty = Math.max(0, Math.min(ty, svgRect.height - groupRect.height));
             // Keep any rotation
             var transform = dragTarget.getAttribute('transform') || '';
             var rotMatch = /rotate\(([^)]+)\)/.exec(transform);
