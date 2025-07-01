@@ -26,3 +26,8 @@ convert js to ts
 - boundaries or multi select 
 - duplicate and selct and duplicate.
 
+seats make circle not rect - done 
+user side zoom - done
+roatate path by 45 deg - done
+drag path - 
+

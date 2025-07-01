@@ -15,24 +15,7 @@
     const minZoom = 1;
     const maxZoom = 3;
     const zoomStep = 0.04;
-    // Rotation 
-    let rotationHandle = null;
-    let rotatingGroup = null;
-    let rotationOrigin = { cx: 0, cy: 0 };
-    let startAngle = 0;
-    let startMouseAngle = 0;
-    let isRotating = false;
-    let justRotated = false;
     let justDragged = false;
-    // Curve Drawing
-    let drawCurveMode = false;
-    let curvePoints = [];
-    let tempCurve = null;
-    let curvePointCircles = [];
-    let selectedCurve = null;
-    let curveHandles = [];
-    let editingCurve = null;
-    let editingPointIndex = null;
     // --- DOM Elements ---
     const roleSelect = document.getElementById('roleSelect');
     const adminPanel = document.getElementById('adminPanel');
@@ -58,9 +41,10 @@
     const saveDesignerLayoutBtn = document.getElementById('saveDesignerLayoutBtn');
     const saveUploadedLayoutBtn = document.getElementById('saveUploadedLayoutBtn');
     const designerSVG = document.getElementById('designerSVG');
-    const drawCurveBtn = document.getElementById('drawCurveBtn');
-    const deleteCurveBtn = document.getElementById('deleteCurveBtn');
     const designerZoomResetBtn = document.getElementById('designerZoomResetBtn');
+    const drawCurveBtn = document.getElementById('drawCurveBtn');
+    const rotateLeftBtn = document.getElementById('rotateLeftBtn');
+    const rotateRightBtn = document.getElementById('rotateRightBtn');
     // Designer SVG pan/zoom state
     let designerOriginalViewBox = designerSVG.getAttribute('viewBox');
     if (!designerOriginalViewBox) {
@@ -75,8 +59,6 @@
     const designerZoomStep = 0.04;
     let isDesignerPanning = false;
     let designerPanStart = { x: 0, y: 0 };
-    let dragCurve = null;
-    let dragCurveStart = { x: 0, y: 0, origD: "" };
     designerZoomResetBtn.addEventListener('click', () => {
         designerPanX = designerViewX;
         designerPanY = designerViewY;
@@ -117,419 +99,545 @@
         else
             designerPanY = Math.max(designerViewY, Math.min(designerPanY, designerViewY + designerViewH - designerPanH));
     }
-    designerSVG.addEventListener('mousedown', (e) => {
-        if (selectedCurve && e.target === selectedCurve) {
-            dragCurve = selectedCurve;
-            dragCurveStart.x = e.clientX;
-            dragCurveStart.y = e.clientY;
-            dragCurveStart.origD = selectedCurve.getAttribute('d') || "";
-            designerSVG.style.cursor = 'grab';
-            e.stopPropagation();
-        }
-    });
-    window.addEventListener('mousemove', (e) => {
-        if (!isDesignerPanning)
-            return;
-        const dx = (e.clientX - designerPanStart.x) * (designerPanW / designerSVG.clientWidth);
-        const dy = (e.clientY - designerPanStart.y) * (designerPanH / designerSVG.clientHeight);
-        designerPanX -= dx;
-        designerPanY -= dy;
-        designerPanStart = { x: e.clientX, y: e.clientY };
-        setDesignerZoom(designerZoomLevel);
-    });
-    window.addEventListener('mouseup', () => {
-        isDesignerPanning = false;
-        designerSVG.style.cursor = '';
-        editingCurve = null;
-        editingPointIndex = null;
-        if (dragCurve) {
-            dragCurve = null;
-            designerSVG.style.cursor = '';
-        }
-    });
-    designerSVG.addEventListener('mouseleave', () => {
-        if (dragCurve) {
-            dragCurve = null;
-            designerSVG.style.cursor = '';
-        }
-    });
     // --- Designer Mouse Wheel & Touchpad Zoom ---
     designerSVG.addEventListener('wheel', (e) => {
         e.preventDefault();
         const direction = e.deltaY < 0 ? 1 : -1;
-        const rect = designerSVG.getBoundingClientRect();
-        const mouseX = ((e.clientX - rect.left) / rect.width) * designerPanW + designerPanX;
-        const mouseY = ((e.clientY - rect.top) / rect.height) * designerPanH + designerPanY;
+        const circle = designerSVG.getBoundingClientRect();
+        const mouseX = ((e.clientX - circle.left) / circle.width) * designerPanW + designerPanX;
+        const mouseY = ((e.clientY - circle.top) / circle.height) * designerPanH + designerPanY;
         setDesignerZoom(designerZoomLevel + direction * designerZoomStep, mouseX, mouseY);
     }, { passive: false });
-    // --- Curve Editing Handles ---
-    function showCurveHandles(curve) {
-        curveHandles.forEach(h => h.remove());
-        curveHandles = [];
-        const match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(curve.getAttribute('d') || "");
-        if (!match)
-            return;
-        const points = [
-            { x: +match[1], y: +match[2] },
-            { x: +match[3], y: +match[4] },
-            { x: +match[5], y: +match[6] }
-        ];
-        points.forEach((pt, idx) => {
-            const handle = document.createElementNS(svgNS, 'circle');
-            handle.setAttribute('cx', pt.x.toString());
-            handle.setAttribute('cy', pt.y.toString());
-            handle.setAttribute('r', '6');
-            handle.setAttribute('fill', idx === 1 ? '#ff9800' : '#2196f3');
-            handle.style.cursor = 'pointer';
-            designerSVG.appendChild(handle);
-            curveHandles.push(handle);
-            handle.addEventListener('mousedown', (e) => {
-                editingCurve = curve;
-                editingPointIndex = idx;
-                e.stopPropagation();
-            });
-        });
-    }
-    function removeCurveHandles() {
-        curveHandles.forEach(h => h.remove());
-        curveHandles = [];
-        editingCurve = null;
-        editingPointIndex = null;
-    }
-    // --- Drawing curve button ---
+    let penMode = false;
+    let currentPenPath = null;
+    let penDragging = null;
+    let penPreviewLine = null;
+    let penPreviewHandle = null;
+    let finishedPenPaths = [];
+    let selectedPenPath = null;
+    // --- Pen Tool Toggle ---
     drawCurveBtn.addEventListener('click', () => {
-        drawCurveMode = !drawCurveMode;
-        if (drawCurveMode) {
-            drawCurveBtn.textContent = "Drawing Curve...";
-            drawCurveBtn.style.background = "#2196f3";
-            drawCurveBtn.style.color = "#fff";
-        }
-        else {
-            drawCurveBtn.textContent = "Draw Curve";
-            drawCurveBtn.style.background = "";
-            drawCurveBtn.style.color = "";
-        }
-        curvePoints = [];
-        if (tempCurve) {
-            tempCurve.remove();
-            tempCurve = null;
-        }
-        curvePointCircles.forEach(c => c.remove());
-        curvePointCircles = [];
-        removeCurveHandles();
+        penMode = !penMode;
+        drawCurveBtn.textContent = penMode ? "Draw Tool: ON" : "Draw Tool";
+        if (!penMode)
+            finishPenPath();
     });
-    // --- Designer SVG click for curve points and selection ---
-    designerSVG.addEventListener('click', (e) => {
-        // --- Draw Curve Mode ---
-        if (drawCurveMode) {
-            const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
-            curvePoints.push({ x: svgCoords.x, y: svgCoords.y });
-            const pointCircle = document.createElementNS(svgNS, 'circle');
-            pointCircle.setAttribute('cx', svgCoords.x.toString());
-            pointCircle.setAttribute('cy', svgCoords.y.toString());
-            pointCircle.setAttribute('r', '2');
-            pointCircle.setAttribute('fill', '#808080');
-            designerSVG.appendChild(pointCircle);
-            curvePointCircles.push(pointCircle);
-            if (curvePoints.length === 3) {
-                const [p0, p1, p2] = curvePoints;
-                const path = document.createElementNS(svgNS, 'path');
-                path.setAttribute('d', `M ${p0.x} ${p0.y} Q ${p1.x} ${p1.y} ${p2.x} ${p2.y}`);
-                path.setAttribute('stroke', '#000');
-                path.setAttribute('stroke-width', '2');
-                path.setAttribute('fill', 'none');
-                designerSVG.appendChild(path);
-                if (tempCurve) {
-                    tempCurve.remove();
-                    tempCurve = null;
-                }
-                curvePointCircles.forEach(c => c.remove());
-                curvePointCircles = [];
-                curvePoints = [];
-                drawCurveMode = false;
-                drawCurveBtn.textContent = "Draw Curve";
-                drawCurveBtn.style.background = "";
-                drawCurveBtn.style.color = "";
-                tempCurve = null;
+    // --- Pen Tool Mouse Down (Add/Select/Drag) ---
+    designerSVG.addEventListener('mousedown', (e) => {
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m, _o, _p, _q, _r;
+        const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+        // --- Pen Tool: Drawing/Editing ---
+        if (penMode) {
+            if (e.button !== 0)
+                return;
+            // Snap/close if clicking first anchor
+            if (currentPenPath &&
+                currentPenPath.points.length > 1 &&
+                e.target === currentPenPath.points[0].anchorCircle) {
+                finishPenPath(true);
+                return;
             }
-            else if (curvePoints.length === 2) {
-                if (!tempCurve) {
-                    tempCurve = document.createElementNS(svgNS, 'path');
-                    tempCurve.setAttribute('stroke', '#808080');
-                    tempCurve.setAttribute('stroke-width', '2');
-                    tempCurve.setAttribute('fill', 'none');
-                    designerSVG.appendChild(tempCurve);
+            // Drag existing anchor/handle
+            if (currentPenPath) {
+                for (const pt of currentPenPath.points) {
+                    if (e.target === pt.anchorCircle) {
+                        penDragging = { point: pt, type: 'anchor', offsetX: svgCoords.x - pt.x, offsetY: svgCoords.y - pt.y };
+                        return;
+                    }
+                    if (e.target === pt.handleInCircle) {
+                        penDragging = { point: pt, type: 'handleIn', offsetX: svgCoords.x - ((_b = (_a = pt.handleIn) === null || _a === void 0 ? void 0 : _a.x) !== null && _b !== void 0 ? _b : pt.x), offsetY: svgCoords.y - ((_d = (_c = pt.handleIn) === null || _c === void 0 ? void 0 : _c.y) !== null && _d !== void 0 ? _d : pt.y) };
+                        return;
+                    }
+                    if (e.target === pt.handleOutCircle) {
+                        penDragging = { point: pt, type: 'handleOut', offsetX: svgCoords.x - ((_f = (_e = pt.handleOut) === null || _e === void 0 ? void 0 : _e.x) !== null && _f !== void 0 ? _f : pt.x), offsetY: svgCoords.y - ((_h = (_g = pt.handleOut) === null || _g === void 0 ? void 0 : _g.y) !== null && _h !== void 0 ? _h : pt.y) };
+                        return;
+                    }
                 }
             }
+            // Add new point
+            if (!currentPenPath) {
+                currentPenPath = {
+                    points: [],
+                    path: document.createElementNS(svgNS, 'path'),
+                    closed: false
+                };
+                currentPenPath.path.setAttribute('stroke', '#000');
+                currentPenPath.path.setAttribute('stroke-width', '2');
+                currentPenPath.path.setAttribute('fill', 'none');
+                designerSVG.appendChild(currentPenPath.path);
+            }
+            let x = svgCoords.x;
+            let y = svgCoords.y;
+            if (e.shiftKey && currentPenPath.points.length > 0) {
+                const prev = currentPenPath.points[currentPenPath.points.length - 1];
+                const dx = x - prev.x;
+                const dy = y - prev.y;
+                const angle = Math.atan2(dy, dx);
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                x = prev.x + Math.cos(snapAngle) * length;
+                y = prev.y + Math.sin(snapAngle) * length;
+            }
+            const newPt = { x, y };
+            currentPenPath.points.push(newPt);
+            // Real anchor
+            newPt.anchorCircle = document.createElementNS(svgNS, 'circle');
+            newPt.anchorCircle.setAttribute('cx', newPt.x.toString());
+            newPt.anchorCircle.setAttribute('cy', newPt.y.toString());
+            newPt.anchorCircle.setAttribute('r', '7');
+            newPt.anchorCircle.setAttribute('fill', 'rgba(0,0,0,0)');
+            newPt.anchorCircle.setAttribute('stroke', 'none'); // Always no stroke
+            newPt.anchorCircle.style.cursor = 'pointer';
+            newPt.anchorCircle.style.pointerEvents = 'all';
+            designerSVG.appendChild(newPt.anchorCircle);
+            // Small visible anchor for UI
+            newPt.anchorDot = document.createElementNS(svgNS, 'circle');
+            newPt.anchorDot.setAttribute('cx', newPt.x.toString());
+            newPt.anchorDot.setAttribute('cy', newPt.y.toString());
+            newPt.anchorDot.setAttribute('r', '3');
+            newPt.anchorDot.setAttribute('fill', 'rgb(0, 0, 0)');
+            newPt.anchorDot.style.pointerEvents = 'none';
+            designerSVG.appendChild(newPt.anchorDot);
+            // Start handle creation (drag)
+            penDragging = { point: newPt, type: 'handleOut', offsetX: 0, offsetY: 0 };
+            newPt._dragStart = { x: svgCoords.x, y: svgCoords.y };
+            updatePenPath(currentPenPath, false);
+            penPreviewLine === null || penPreviewLine === void 0 ? void 0 : penPreviewLine.remove();
+            penPreviewHandle === null || penPreviewHandle === void 0 ? void 0 : penPreviewHandle.remove();
             return;
         }
-        // --- Curve Selection Mode ---
-        if (!addMode && e.target instanceof SVGPathElement) {
-            if (selectedCurve) {
-                selectedCurve.setAttribute('stroke', '#000');
-                selectedCurve.setAttribute('stroke-width', '2');
+        // --- Pen Tool: Editing existing path (not in penMode) ---
+        if (!penMode && selectedPenPath) {
+            for (const pt of selectedPenPath.points) {
+                if (e.target === pt.anchorCircle) {
+                    penDragging = { point: pt, type: 'anchor', offsetX: svgCoords.x - pt.x, offsetY: svgCoords.y - pt.y };
+                    return;
+                }
+                if (e.target === pt.handleInCircle) {
+                    penDragging = { point: pt, type: 'handleIn', offsetX: svgCoords.x - ((_k = (_j = pt.handleIn) === null || _j === void 0 ? void 0 : _j.x) !== null && _k !== void 0 ? _k : pt.x), offsetY: svgCoords.y - ((_m = (_l = pt.handleIn) === null || _l === void 0 ? void 0 : _l.y) !== null && _m !== void 0 ? _m : pt.y) };
+                    return;
+                }
+                if (e.target === pt.handleOutCircle) {
+                    penDragging = { point: pt, type: 'handleOut', offsetX: svgCoords.x - ((_p = (_o = pt.handleOut) === null || _o === void 0 ? void 0 : _o.x) !== null && _p !== void 0 ? _p : pt.x), offsetY: svgCoords.y - ((_r = (_q = pt.handleOut) === null || _q === void 0 ? void 0 : _q.y) !== null && _r !== void 0 ? _r : pt.y) };
+                    return;
+                }
             }
-            selectedCurve = e.target;
-            selectedCurve.setAttribute('stroke', '#f44336');
-            selectedCurve.setAttribute('stroke-width', '4');
-            removeCurveHandles();
-            showCurveHandles(selectedCurve);
-            if (selectedDesignerSeat) {
-                selectedDesignerSeat.setAttribute('stroke', '#222');
+        }
+        // --- Admin: Select seat/group ---
+        if (roleSelect.value === 'admin' && !addMode) {
+            // If clicking on a circle (seat), select it
+            if (e.target instanceof SVGCircleElement) {
+                selectDesignerSeat(e.target);
+                return;
+            }
+            // If clicking on SVG background, deselect
+            if (e.target === designerSVG) {
+                if (selectedDesignerSeat)
+                    selectedDesignerSeat.setAttribute('stroke', '#222');
                 selectedDesignerSeat = null;
                 seatIdInput.value = '';
-                if (rotationHandle) {
-                    rotationHandle.remove();
-                    rotationHandle = null;
+                return;
+            }
+        }
+    });
+    window.addEventListener('mousemove', (e) => {
+        var _a, _b, _c, _d, _e, _f;
+        // --- 1. Pen Tool anchor/handle dragging ---
+        if (penDragging && (currentPenPath || selectedPenPath)) {
+            const pathObj = currentPenPath || selectedPenPath;
+            const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            const pt = penDragging.point;
+            if (penDragging.type === 'anchor') {
+                pt.x = svgCoords.x - penDragging.offsetX;
+                pt.y = svgCoords.y - penDragging.offsetY;
+                (_a = pt.anchorCircle) === null || _a === void 0 ? void 0 : _a.setAttribute('cx', pt.x.toString());
+                (_b = pt.anchorCircle) === null || _b === void 0 ? void 0 : _b.setAttribute('cy', pt.y.toString());
+                (_c = pt.anchorDot) === null || _c === void 0 ? void 0 : _c.setAttribute('cx', pt.x.toString());
+                (_d = pt.anchorDot) === null || _d === void 0 ? void 0 : _d.setAttribute('cy', pt.y.toString());
+                if (pt.handleIn) {
+                    pt.handleIn.x += svgCoords.x - pt.x - penDragging.offsetX;
+                    pt.handleIn.y += svgCoords.y - pt.y - penDragging.offsetY;
+                }
+                if (pt.handleOut) {
+                    pt.handleOut.x += svgCoords.x - pt.x - penDragging.offsetX;
+                    pt.handleOut.y += svgCoords.y - pt.y - penDragging.offsetY;
                 }
             }
+            else if (penDragging.type === 'handleIn') {
+                let x = svgCoords.x - penDragging.offsetX;
+                let y = svgCoords.y - penDragging.offsetY;
+                if (e.shiftKey) {
+                    const dx = x - pt.x;
+                    const dy = y - pt.y;
+                    const angle = Math.atan2(dy, dx);
+                    const length = Math.sqrt(dx * dx + dy * dy);
+                    const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                    x = pt.x + Math.cos(snapAngle) * length;
+                    y = pt.y + Math.sin(snapAngle) * length;
+                }
+                pt.handleIn = { x, y };
+                if (!e.altKey) {
+                    const dx = pt.x - pt.handleIn.x, dy = pt.y - pt.handleIn.y;
+                    pt.handleOut = { x: pt.x + dx, y: pt.y + dy };
+                }
+            }
+            else if (penDragging.type === 'handleOut') {
+                let x = svgCoords.x - penDragging.offsetX;
+                let y = svgCoords.y - penDragging.offsetY;
+                if (e.shiftKey) {
+                    const dx = x - pt.x;
+                    const dy = y - pt.y;
+                    const angle = Math.atan2(dy, dx);
+                    const length = Math.sqrt(dx * dx + dy * dy);
+                    const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                    x = pt.x + Math.cos(snapAngle) * length;
+                    y = pt.y + Math.sin(snapAngle) * length;
+                }
+                pt.handleOut = { x, y };
+                if (typeof pt._dragStart !== 'undefined') {
+                    if (!e.altKey) {
+                        const dx = pt.x - pt.handleOut.x, dy = pt.y - pt.handleOut.y;
+                        pt.handleIn = { x: pt.x + dx, y: pt.y + dy };
+                    }
+                }
+                else if (!e.altKey) {
+                    const dx = pt.x - pt.handleOut.x, dy = pt.y - pt.handleOut.y;
+                    pt.handleIn = { x: pt.x + dx, y: pt.y + dy };
+                }
+            }
+            if (pathObj != null) {
+                updatePenPath(pathObj, false);
+                return;
+            }
+        }
+        // --- 2. Group (seat) dragging ---
+        if (dragTarget && roleSelect.value === 'admin') {
+            designerSVG.style.cursor = 'grab';
+            const dx = e.clientX - dragStart.x;
+            const dy = e.clientY - dragStart.y;
+            const tx = dragStart.tx + dx;
+            const ty = dragStart.ty + dy;
+            dragTarget.setAttribute('transform', `translate(${tx},${ty})`);
+        }
+        else {
+            designerSVG.style.cursor = '';
+        }
+        // --- 3. Preview logic ---
+        if (penMode && !penDragging && currentPenPath) {
+            const lastPt = currentPenPath.points[currentPenPath.points.length - 1];
+            if (!lastPt)
+                return;
+            let svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            penPreviewLine === null || penPreviewLine === void 0 ? void 0 : penPreviewLine.remove();
+            penPreviewHandle === null || penPreviewHandle === void 0 ? void 0 : penPreviewHandle.remove();
+            if (e.shiftKey) {
+                const dx = svgCoords.x - lastPt.x;
+                const dy = svgCoords.y - lastPt.y;
+                const angle = Math.atan2(dy, dx);
+                const length = Math.sqrt(dx * dx + dy * dy);
+                const snapAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+                svgCoords = {
+                    x: lastPt.x + Math.cos(snapAngle) * length,
+                    y: lastPt.y + Math.sin(snapAngle) * length
+                };
+            }
+            if (lastPt.handleOut) {
+                penPreviewHandle = document.createElementNS(svgNS, 'line');
+                penPreviewHandle.setAttribute('x1', lastPt.x.toString());
+                penPreviewHandle.setAttribute('y1', lastPt.y.toString());
+                penPreviewHandle.setAttribute('x2', lastPt.handleOut.x.toString());
+                penPreviewHandle.setAttribute('y2', lastPt.handleOut.y.toString());
+                penPreviewHandle.setAttribute('stroke', '#bbb');
+                penPreviewHandle.setAttribute('stroke-dasharray', '2,2');
+                designerSVG.appendChild(penPreviewHandle);
+            }
+            penPreviewLine = document.createElementNS(svgNS, 'line');
+            penPreviewLine.setAttribute('x1', lastPt.x.toString());
+            penPreviewLine.setAttribute('y1', lastPt.y.toString());
+            penPreviewLine.setAttribute('x2', svgCoords.x.toString());
+            penPreviewLine.setAttribute('y2', svgCoords.y.toString());
+            penPreviewLine.setAttribute('stroke', '#2196f3');
+            penPreviewLine.setAttribute('stroke-dasharray', '4,2');
+            designerSVG.appendChild(penPreviewLine);
+            // Snap highlight
+            const firstPt = currentPenPath.points[0];
+            if (firstPt &&
+                currentPenPath.points.length > 1 &&
+                Math.hypot(svgCoords.x - firstPt.x, svgCoords.y - firstPt.y) < 12) {
+                (_e = firstPt.anchorCircle) === null || _e === void 0 ? void 0 : _e.setAttribute('fill', '#f44336');
+            }
+            else {
+                (_f = firstPt.anchorCircle) === null || _f === void 0 ? void 0 : _f.setAttribute('fill', '#2196f3');
+            }
+        }
+        // --- 4. Designer SVG panning ---
+        if (isDesignerPanning) {
+            const dx = (e.clientX - designerPanStart.x) * (designerPanW / designerSVG.clientWidth);
+            const dy = (e.clientY - designerPanStart.y) * (designerPanH / designerSVG.clientHeight);
+            designerPanX -= dx;
+            designerPanY -= dy;
+            designerPanStart = { x: e.clientX, y: e.clientY };
+            setDesignerZoom(designerZoomLevel);
             return;
         }
-        // --- Deselect curve if clicking on blank SVG ---
-        if (!addMode && e.target === designerSVG) {
-            removeCurveHandles();
-            if (selectedCurve) {
-                selectedCurve.setAttribute('stroke', '#000');
-                selectedCurve.setAttribute('stroke-width', '2');
-                selectedCurve = null;
-            }
+        // --- 5. User SVG panning ---
+        if (isPanning) {
+            const dx = (e.clientX - panStart.x) * (panW / seatSVG.clientWidth);
+            const dy = (e.clientY - panStart.y) * (panH / seatSVG.clientHeight);
+            panX -= dx;
+            panY -= dy;
+            panStart = { x: e.clientX, y: e.clientY };
+            clampPan();
+            seatSVG.setAttribute('viewBox', `${panX} ${panY} ${panW} ${panH}`);
+            return;
         }
     });
-    // Live preview for curve while drawing
-    designerSVG.addEventListener('mousemove', (e) => {
-        if (drawCurveMode && curvePoints.length === 2 && tempCurve) {
-            const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
-            const [p0, p1] = curvePoints;
-            tempCurve.setAttribute('d', `M ${p0.x} ${p0.y} Q ${p1.x} ${p1.y} ${svgCoords.x} ${svgCoords.y}`);
-        }
-    });
-    // --- Curve Editing: Drag handles to edit curve ---
-    window.addEventListener('mousemove', (e) => {
-        if (editingCurve && editingPointIndex !== null) {
-            const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
-            const match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(editingCurve.getAttribute('d') || "");
-            if (!match)
-                return;
-            const points = [
-                { x: +match[1], y: +match[2] },
-                { x: +match[3], y: +match[4] },
-                { x: +match[5], y: +match[6] }
-            ];
-            points[editingPointIndex] = { x: svgCoords.x, y: svgCoords.y };
-            editingCurve.setAttribute('d', `M ${points[0].x} ${points[0].y} Q ${points[1].x} ${points[1].y} ${points[2].x} ${points[2].y}`);
-            curveHandles[editingPointIndex].setAttribute('cx', svgCoords.x.toString());
-            curveHandles[editingPointIndex].setAttribute('cy', svgCoords.y.toString());
-        }
-    });
-    // --- Curve Dragging ---
-    window.addEventListener('mousemove', (e) => {
-        if (dragCurve) {
-            const dx = e.clientX - dragCurveStart.x;
-            const dy = e.clientY - dragCurveStart.y;
-            const match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(dragCurveStart.origD);
-            if (!match)
-                return;
-            let [_, x0, y0, x1, y1, x2, y2] = match.map(Number);
-            const svgRect = designerSVG.getBoundingClientRect();
-            const scaleX = (designerPanW / svgRect.width);
-            const scaleY = (designerPanH / svgRect.height);
-            let svgDx = dx * scaleX;
-            let svgDy = dy * scaleY;
-            const minX = Math.min(x0 + svgDx, x1 + svgDx, x2 + svgDx);
-            const minY = Math.min(y0 + svgDy, y1 + svgDy, y2 + svgDy);
-            const maxX = Math.max(x0 + svgDx, x1 + svgDx, x2 + svgDx);
-            const maxY = Math.max(y0 + svgDy, y1 + svgDy, y2 + svgDy);
-            let clampDx = svgDx, clampDy = svgDy;
-            if (minX < designerPanX)
-                clampDx += designerPanX - minX;
-            if (maxX > designerPanX + designerPanW)
-                clampDx -= maxX - (designerPanX + designerPanW);
-            if (minY < designerPanY)
-                clampDy += designerPanY - minY;
-            if (maxY > designerPanY + designerPanH)
-                clampDy -= maxY - (designerPanY + designerPanH);
-            dragCurve.setAttribute('d', `M ${x0 + clampDx} ${y0 + clampDy} Q ${x1 + clampDx} ${y1 + clampDy} ${x2 + clampDx} ${y2 + clampDy}`);
-            // Also update handles if curve is selected and being dragged
-            if (selectedCurve === dragCurve && curveHandles.length === 3) {
-                const newPoints = [
-                    { x: x0 + clampDx, y: y0 + clampDy },
-                    { x: x1 + clampDx, y: y1 + clampDy },
-                    { x: x2 + clampDx, y: y2 + clampDy }
-                ];
-                curveHandles.forEach((h, idx) => {
-                    h.setAttribute('cx', newPoints[idx].x.toString());
-                    h.setAttribute('cy', newPoints[idx].y.toString());
-                });
-            }
-        }
-    });
-    // --- Delete curve button ---
-    deleteCurveBtn.addEventListener('click', () => {
-        if (selectedCurve && designerSVG.contains(selectedCurve)) {
-            designerSVG.removeChild(selectedCurve);
-            removeCurveHandles();
-            selectedCurve = null;
-        }
-    });
-    // Show rotation handle next to the seat
-    function showRotationHandle(rect) {
-        if (rotationHandle) {
-            rotationHandle.remove();
-            rotationHandle = null;
-        }
-        const group = rect.parentNode;
-        // Get seat center in local group coordinates
-        const x = parseFloat(rect.getAttribute('x') || "0");
-        const y = parseFloat(rect.getAttribute('y') || "0");
-        const w = parseFloat(rect.getAttribute('width') || "0");
-        const h = parseFloat(rect.getAttribute('height') || "0");
-        const localCx = x + w / 2;
-        const localCy = y + h / 2;
-        // Get seat center in SVG coordinates (for handle position)
-        let cx = localCx, cy = localCy;
-        const ctm = group.getCTM();
-        if (ctm) {
-            const pt = designerSVG.createSVGPoint();
-            pt.x = localCx;
-            pt.y = localCy;
-            const svgPt = pt.matrixTransform(ctm);
-            cx = svgPt.x;
-            cy = svgPt.y;
-        }
-        // Get current group rotation in degrees
-        const transform = group.getAttribute('transform') || '';
-        const match = /rotate\((-?\d+(\.\d+)?)/.exec(transform);
-        const angle = match ? parseFloat(match[1]) : 0;
-        const rad = (angle * Math.PI) / 180;
-        // Offset: 25px at 45° from the seat center, rotated with the seat
-        const offset = 25;
-        const baseAngle = Math.PI / 4; // 45 degrees
-        const handleX = cx + offset * Math.cos(baseAngle + rad);
-        const handleY = cy + offset * Math.sin(baseAngle + rad);
-        rotationHandle = document.createElementNS(svgNS, 'circle');
-        rotationHandle.setAttribute('cx', handleX.toString());
-        rotationHandle.setAttribute('cy', handleY.toString());
-        rotationHandle.setAttribute('r', '3');
-        rotationHandle.setAttribute('fill', '#000');
-        rotationHandle.style.cursor = 'pointer';
-        designerSVG.appendChild(rotationHandle);
-        rotationHandle.onmousedown = (e) => {
-            e.stopPropagation();
-            rotatingGroup = group;
-            // Use local coordinates for rotation center!
-            rotationOrigin = { cx: localCx, cy: localCy };
-            // Get current group rotation
-            const transform = group.getAttribute('transform') || '';
-            const match = /rotate\((-?\d+(\.\d+)?)/.exec(transform);
-            startAngle = match ? parseFloat(match[1]) : 0;
-            // Mouse angle from center (in SVG coordinates)
-            const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
-            startMouseAngle = Math.atan2(svgCoords.y - cy, svgCoords.x - cx) * 180 / Math.PI;
-            document.body.style.cursor = 'crosshair';
-        };
-    }
-    // Listen for mousemove/mouseup on window for rotation
-    window.addEventListener('mousemove', (e) => {
-        if (rotatingGroup) {
-            // Get local center for rotation
-            const rect = rotatingGroup.querySelector('rect');
-            if (!rect)
-                return;
-            const x = parseFloat(rect.getAttribute('x') || "0");
-            const y = parseFloat(rect.getAttribute('y') || "0");
-            const w = parseFloat(rect.getAttribute('width') || "0");
-            const h = parseFloat(rect.getAttribute('height') || "0");
-            const localCx = x + w / 2;
-            const localCy = y + h / 2;
-            // Get seat center in SVG coordinates (for mouse angle and handle)
-            let cx = localCx, cy = localCy;
-            const ctm = rotatingGroup.getCTM();
-            if (ctm) {
-                const pt = designerSVG.createSVGPoint();
-                pt.x = localCx;
-                pt.y = localCy;
-                const svgPt = pt.matrixTransform(ctm);
-                cx = svgPt.x;
-                cy = svgPt.y;
-            }
-            const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
-            const mouseAngle = Math.atan2(svgCoords.y - cy, svgCoords.x - cx) * 180 / Math.PI;
-            let newAngle = startAngle + (mouseAngle - startMouseAngle);
-            newAngle = ((newAngle % 360) + 360) % 360;
-            // Keep any translation
-            const transform = rotatingGroup.getAttribute('transform') || '';
-            const transMatch = /translate\(([^,]+),([^)]+)\)/.exec(transform);
-            let transPart = '';
-            if (transMatch)
-                transPart = `translate(${transMatch[1]},${transMatch[2]}) `;
-            rotatingGroup.setAttribute('transform', `${transPart}rotate(${newAngle} ${localCx} ${localCy})`);
-            // Move handle visually (in SVG coordinates)
-            if (rotationHandle) {
-                const rad = (newAngle * Math.PI) / 180;
-                const offset = 25;
-                const baseAngle = Math.PI / 4;
-                rotationHandle.setAttribute('cx', (cx + offset * Math.cos(baseAngle + rad)).toString());
-                rotationHandle.setAttribute('cy', (cy + offset * Math.sin(baseAngle + rad)).toString());
-            }
-        }
-        // Curve dragging
-        if (dragCurve) {
-            const dx = e.clientX - dragCurveStart.x;
-            const dy = e.clientY - dragCurveStart.y;
-            // Parse original path (quadratic Bezier: M x0 y0 Q x1 y1 x2 y2)
-            const match = /M\s*([-\d.]+)\s+([-\d.]+)\s+Q\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)/.exec(dragCurveStart.origD);
-            if (!match)
-                return;
-            let [_, x0, y0, x1, y1, x2, y2] = match.map(Number);
-            // Convert dx/dy from client to SVG coordinates
-            const svgRect = designerSVG.getBoundingClientRect();
-            const scaleX = (designerPanW / svgRect.width);
-            const scaleY = (designerPanH / svgRect.height);
-            let svgDx = dx * scaleX;
-            let svgDy = dy * scaleY;
-            // Clamp: compute bounding box after move
-            const minX = Math.min(x0 + svgDx, x1 + svgDx, x2 + svgDx);
-            const minY = Math.min(y0 + svgDy, y1 + svgDy, y2 + svgDy);
-            const maxX = Math.max(x0 + svgDx, x1 + svgDx, x2 + svgDx);
-            const maxY = Math.max(y0 + svgDy, y1 + svgDy, y2 + svgDy);
-            // Clamp so curve stays inside SVG viewBox
-            let clampDx = svgDx, clampDy = svgDy;
-            if (minX < designerPanX)
-                clampDx += designerPanX - minX;
-            if (maxX > designerPanX + designerPanW)
-                clampDx -= maxX - (designerPanX + designerPanW);
-            if (minY < designerPanY)
-                clampDy += designerPanY - minY;
-            if (maxY > designerPanY + designerPanH)
-                clampDy -= maxY - (designerPanY + designerPanH);
-            // Update path
-            dragCurve.setAttribute('d', `M ${x0 + clampDx} ${y0 + clampDy} Q ${x1 + clampDx} ${y1 + clampDy} ${x2 + clampDx} ${y2 + clampDy}`);
-        }
-    });
+    // --- Pen Tool Mouse Up (End Drag) ---
     window.addEventListener('mouseup', () => {
-        if (rotatingGroup) {
-            rotatingGroup = null;
-            document.body.style.cursor = '';
-            justRotated = true; // to not let new seat creation interfere
+        // --- End all drag/rotate states ---
+        isDesignerPanning = false;
+        penDragging = null;
+        designerSVG.style.cursor = '';
+        isPanning = false;
+        seatSVG.style.cursor = '';
+        // HandleOut if it was a click, not a drag
+        if (penDragging && penDragging.type === 'handleOut' && penDragging.point._dragStart) {
+            const pt = penDragging.point;
+            const dx = pt.handleOut ? pt.handleOut.x - pt.x : 0;
+            const dy = pt.handleOut ? pt.handleOut.y - pt.y : 0;
+            if (Math.abs(dx) < 2 && Math.abs(dy) < 2) {
+                pt.handleOut = undefined;
+                pt.handleIn = undefined;
+            }
+            delete pt._dragStart;
         }
-        if (dragCurve) {
-            dragCurve = null;
-            designerSVG.style.cursor = '';
+        // End group drag
+        if (dragTarget) {
+            justDragged = true;
+            dragTarget = null;
         }
     });
+    // --- Remove preview on mouse leave or down ---
     designerSVG.addEventListener('mouseleave', () => {
-        if (dragCurve) {
-            dragCurve = null;
-            designerSVG.style.cursor = '';
+        penPreviewLine === null || penPreviewLine === void 0 ? void 0 : penPreviewLine.remove();
+        penPreviewHandle === null || penPreviewHandle === void 0 ? void 0 : penPreviewHandle.remove();
+        designerSVG.style.cursor = '';
+    });
+    // --- Undo/Redo ---
+    window.addEventListener('keydown', (e) => {
+        var _a, _b, _c, _d, _e, _f;
+        if (!penMode || !currentPenPath)
+            return;
+        // Remove last anchor point (and handles) with Backspace/Delete or Ctrl+Z
+        if (e.key === "Backspace" ||
+            e.key === "Delete" ||
+            ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z")) {
+            e.preventDefault();
+            const pt = currentPenPath.points.pop();
+            if (pt) {
+                (_a = pt.anchorCircle) === null || _a === void 0 ? void 0 : _a.remove();
+                (_b = pt.handleInCircle) === null || _b === void 0 ? void 0 : _b.remove();
+                (_c = pt.handleOutCircle) === null || _c === void 0 ? void 0 : _c.remove();
+                (_d = pt.handleLineIn) === null || _d === void 0 ? void 0 : _d.remove();
+                (_e = pt.handleLineOut) === null || _e === void 0 ? void 0 : _e.remove();
+                (_f = pt.anchorDot) === null || _f === void 0 ? void 0 : _f.remove();
+                if (penPreviewLine)
+                    penPreviewLine.remove();
+                if (penPreviewHandle)
+                    penPreviewHandle.remove();
+                updatePenPath(currentPenPath, false);
+            }
+            if (currentPenPath.points.length === 0) {
+                currentPenPath.path.remove();
+                currentPenPath = null;
+            }
         }
     });
-    // --- Original View ---
-    let originalViewBox = seatSVG.getAttribute('viewBox');
-    if (!originalViewBox) {
-        originalViewBox = `0 0 ${seatSVG.width.baseVal.value} ${seatSVG.height.baseVal.value}`;
-        seatSVG.setAttribute('viewBox', originalViewBox);
+    // --- Finish Path ---
+    function finishPenPath(close = false) {
+        if (!currentPenPath)
+            return;
+        if (close && currentPenPath.points.length > 1) {
+            currentPenPath.closed = true;
+            updatePenPath(currentPenPath, true); // Hide handles by default
+        }
+        currentPenPath.points.forEach(pt => {
+            var _a, _b, _c;
+            (_a = pt.anchorCircle) === null || _a === void 0 ? void 0 : _a.setAttribute('fill', 'rgba(0,0,0,0)');
+            (_b = pt.handleInCircle) === null || _b === void 0 ? void 0 : _b.setAttribute('fill', '#bbb');
+            (_c = pt.handleOutCircle) === null || _c === void 0 ? void 0 : _c.setAttribute('fill', '#bbb');
+        });
+        finishedPenPaths.push(currentPenPath);
+        currentPenPath.path.style.cursor = "pointer";
+        const thisPath = currentPenPath;
+        currentPenPath.path.addEventListener('click', () => {
+            selectPenPath(thisPath);
+        });
+        currentPenPath = null;
+        penDragging = null;
+        drawCurveBtn.textContent = "Pen Tool";
+        penMode = false;
+        penPreviewLine === null || penPreviewLine === void 0 ? void 0 : penPreviewLine.remove();
+        penPreviewHandle === null || penPreviewHandle === void 0 ? void 0 : penPreviewHandle.remove();
+        penPreviewLine = null;
+        penPreviewHandle = null;
     }
-    let [viewX, viewY, viewW, viewH] = originalViewBox.split(' ').map(Number);
+    // --- Path selection logic ---
+    function selectPenPath(path) {
+        // Deselect previous
+        if (selectedPenPath && selectedPenPath !== path) {
+            updatePenPath(selectedPenPath, true); // Hide handles
+            selectedPenPath.path.setAttribute('stroke', '#000');
+        }
+        selectedPenPath = path;
+        updatePenPath(path, false); // Show handles
+        path.path.setAttribute('stroke', '#f44336');
+    }
+    // --- Deselect on SVG background click ---
+    designerSVG.addEventListener('click', (e) => {
+        if (!penMode && e.target === designerSVG && selectedPenPath) {
+            updatePenPath(selectedPenPath, true);
+            selectedPenPath.path.setAttribute('stroke', '#000');
+            selectedPenPath = null;
+        }
+    });
+    // --- Update Path & Handles ---
+    function updatePenPath(pathObj, hideHandles = false) {
+        var _a, _b, _c, _d, _e, _f;
+        for (const pt of pathObj.points) {
+            (_a = pt.handleLineIn) === null || _a === void 0 ? void 0 : _a.remove();
+            (_b = pt.handleLineOut) === null || _b === void 0 ? void 0 : _b.remove();
+            (_c = pt.handleInCircle) === null || _c === void 0 ? void 0 : _c.remove();
+            (_d = pt.handleOutCircle) === null || _d === void 0 ? void 0 : _d.remove();
+            (_e = pt.anchorCircle) === null || _e === void 0 ? void 0 : _e.remove();
+            (_f = pt.anchorDot) === null || _f === void 0 ? void 0 : _f.remove();
+            pt.handleLineIn = pt.handleLineOut = pt.handleInCircle = pt.handleOutCircle = undefined;
+        }
+        for (let i = 0; i < pathObj.points.length; i++) {
+            const pt = pathObj.points[i];
+            // Large invisible anchor for hit-testing
+            pt.anchorCircle = document.createElementNS(svgNS, 'circle');
+            pt.anchorCircle.setAttribute('cx', pt.x.toString());
+            pt.anchorCircle.setAttribute('cy', pt.y.toString());
+            pt.anchorCircle.setAttribute('r', '7');
+            pt.anchorCircle.setAttribute('fill', 'rgba(0,0,0,0)');
+            pt.anchorCircle.setAttribute('stroke', 'none'); // Always no stroke
+            pt.anchorCircle.style.cursor = 'pointer';
+            pt.anchorCircle.style.pointerEvents = 'all';
+            designerSVG.appendChild(pt.anchorCircle);
+            // Small visible anchor for UI
+            pt.anchorDot = document.createElementNS(svgNS, 'circle');
+            pt.anchorDot.setAttribute('cx', pt.x.toString());
+            pt.anchorDot.setAttribute('cy', pt.y.toString());
+            pt.anchorDot.setAttribute('r', '3');
+            pt.anchorDot.setAttribute('fill', 'rgb(0,0,0)');
+            pt.anchorDot.style.pointerEvents = 'none';
+            designerSVG.appendChild(pt.anchorDot);
+            if (!hideHandles) {
+                // Handle In
+                if (pt.handleIn) {
+                    pt.handleLineIn = document.createElementNS(svgNS, 'line');
+                    pt.handleLineIn.setAttribute('x1', pt.x.toString());
+                    pt.handleLineIn.setAttribute('y1', pt.y.toString());
+                    pt.handleLineIn.setAttribute('x2', pt.handleIn.x.toString());
+                    pt.handleLineIn.setAttribute('y2', pt.handleIn.y.toString());
+                    pt.handleLineIn.setAttribute('stroke', '#bbb');
+                    pt.handleLineIn.setAttribute('stroke-dasharray', '2,2');
+                    designerSVG.appendChild(pt.handleLineIn);
+                    pt.handleInCircle = document.createElementNS(svgNS, 'circle');
+                    pt.handleInCircle.setAttribute('cx', pt.handleIn.x.toString());
+                    pt.handleInCircle.setAttribute('cy', pt.handleIn.y.toString());
+                    pt.handleInCircle.setAttribute('r', '3');
+                    pt.handleInCircle.setAttribute('fill', '#ff9800');
+                    pt.handleInCircle.style.cursor = 'pointer';
+                    designerSVG.appendChild(pt.handleInCircle);
+                }
+                // Handle Out
+                if (pt.handleOut) {
+                    pt.handleLineOut = document.createElementNS(svgNS, 'line');
+                    pt.handleLineOut.setAttribute('x1', pt.x.toString());
+                    pt.handleLineOut.setAttribute('y1', pt.y.toString());
+                    pt.handleLineOut.setAttribute('x2', pt.handleOut.x.toString());
+                    pt.handleLineOut.setAttribute('y2', pt.handleOut.y.toString());
+                    pt.handleLineOut.setAttribute('stroke', '#bbb');
+                    pt.handleLineOut.setAttribute('stroke-dasharray', '2,2');
+                    designerSVG.appendChild(pt.handleLineOut);
+                    pt.handleOutCircle = document.createElementNS(svgNS, 'circle');
+                    pt.handleOutCircle.setAttribute('cx', pt.handleOut.x.toString());
+                    pt.handleOutCircle.setAttribute('cy', pt.handleOut.y.toString());
+                    pt.handleOutCircle.setAttribute('r', '3');
+                    pt.handleOutCircle.setAttribute('fill', '#ff9800');
+                    pt.handleOutCircle.style.cursor = 'pointer';
+                    designerSVG.appendChild(pt.handleOutCircle);
+                }
+            }
+        }
+        // Build path string
+        let d = '';
+        for (let i = 0; i < pathObj.points.length; i++) {
+            const pt = pathObj.points[i];
+            if (i === 0) {
+                d += `M ${pt.x} ${pt.y}`;
+            }
+            else {
+                const prev = pathObj.points[i - 1];
+                const c1 = prev.handleOut || prev;
+                const c2 = pt.handleIn || pt;
+                d += ` C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${pt.x} ${pt.y}`;
+            }
+        }
+        if (pathObj.closed) {
+            // Close with a cubic segment to the first point
+            const last = pathObj.points[pathObj.points.length - 1];
+            const first = pathObj.points[0];
+            const c1 = last.handleOut || last;
+            const c2 = first.handleIn || first;
+            d += ` C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${first.x} ${first.y} Z`;
+        }
+        pathObj.path.setAttribute('d', d);
+    }
+    // Rotate selected path around its center
+    function rotateSelectedPath(angleDeg) {
+        if (!selectedPenPath)
+            return;
+        // Find center of path
+        const points = selectedPenPath.points;
+        if (points.length === 0)
+            return;
+        const cx = points.reduce((sum, pt) => sum + pt.x, 0) / points.length;
+        const cy = points.reduce((sum, pt) => sum + pt.y, 0) / points.length;
+        const angleRad = angleDeg * Math.PI / 180;
+        for (const pt of points) {
+            // Rotate anchor
+            const dx = pt.x - cx;
+            const dy = pt.y - cy;
+            pt.x = cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
+            pt.y = cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+            // Rotate handles if present
+            if (pt.handleIn) {
+                const hdx = pt.handleIn.x - cx;
+                const hdy = pt.handleIn.y - cy;
+                pt.handleIn.x = cx + hdx * Math.cos(angleRad) - hdy * Math.sin(angleRad);
+                pt.handleIn.y = cy + hdx * Math.sin(angleRad) + hdy * Math.cos(angleRad);
+            }
+            if (pt.handleOut) {
+                const hdx = pt.handleOut.x - cx;
+                const hdy = pt.handleOut.y - cy;
+                pt.handleOut.x = cx + hdx * Math.cos(angleRad) - hdy * Math.sin(angleRad);
+                pt.handleOut.y = cy + hdx * Math.sin(angleRad) + hdy * Math.cos(angleRad);
+            }
+        }
+        updatePenPath(selectedPenPath, false);
+    }
+    rotateLeftBtn.addEventListener('click', () => rotateSelectedPath(-45));
+    rotateRightBtn.addEventListener('click', () => rotateSelectedPath(45));
+    // --- Original View ---
+    const svgWidth = seatSVG.width.baseVal.value;
+    const svgHeight = seatSVG.height.baseVal.value;
+    // Always force the viewBox to match the SVG's width/height
+    const originalViewBox = `0 0 ${svgWidth} ${svgHeight}`;
+    seatSVG.setAttribute('viewBox', originalViewBox);
+    let [viewX, viewY, viewW, viewH] = [0, 0, svgWidth, svgHeight];
     let panX = viewX, panY = viewY, panW = viewW, panH = viewH;
     // --- Zoom Logic ---
     function setUserZoom(zoom, centerX, centerY) {
@@ -547,12 +655,18 @@
             // If zooming on a point, adjust pan so that point stays under the cursor
             if (typeof centerX === 'number' && typeof centerY === 'number') {
                 // centerX/centerY are in SVG coordinates
-                const zoomRatio = newW / panW;
-                panX = centerX - (centerX - panX) * zoomRatio;
-                panY = centerY - (centerY - panY) * zoomRatio;
+                // Calculate the relative position of the zoom center
+                const relX = (centerX - panX) / panW;
+                const relY = (centerY - panY) / panH;
+                panW = newW;
+                panH = newH;
+                panX = centerX - relX * panW;
+                panY = centerY - relY * panH;
             }
-            panW = newW;
-            panH = newH;
+            else {
+                panW = newW;
+                panH = newH;
+            }
             clampPan();
         }
         seatSVG.setAttribute('viewBox', `${panX} ${panY} ${panW} ${panH}`);
@@ -561,21 +675,11 @@
     let isPanning = false;
     let panStart = { x: 0, y: 0 };
     seatSVG.addEventListener('mousedown', (e) => {
-        if (e.target.tagName === 'rect')
+        if (e.target.tagName === 'circle')
             return;
         isPanning = true;
         panStart = { x: e.clientX, y: e.clientY };
         seatSVG.style.cursor = 'grab';
-    });
-    window.addEventListener('mousemove', (e) => {
-        if (!isPanning)
-            return;
-        const dx = (e.clientX - panStart.x) * (panW / seatSVG.clientWidth);
-        const dy = (e.clientY - panStart.y) * (panH / seatSVG.clientHeight);
-        panX -= dx;
-        panY -= dy;
-        panStart = { x: e.clientX, y: e.clientY };
-        setUserZoom(userZoomLevel); // Always use setUserZoom to update viewBox and clamp
     });
     function clampPan() {
         // Clamp panX and panY so the viewBox stays within the SVG bounds
@@ -601,13 +705,15 @@
         }
     });
     seatSVG.addEventListener('touchmove', (e) => {
+        e.preventDefault();
         if (e.touches.length === 1 && isPanning) {
             const dx = (e.touches[0].clientX - panStart.x) * (panW / seatSVG.clientWidth);
             const dy = (e.touches[0].clientY - panStart.y) * (panH / seatSVG.clientHeight);
             panX -= dx;
             panY -= dy;
             panStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-            setUserZoom(userZoomLevel); // Always use setUserZoom to update viewBox and clamp
+            clampPan();
+            seatSVG.setAttribute('viewBox', `${panX} ${panY} ${panW} ${panH}`);
         }
         else if (e.touches.length === 2) {
             const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -626,9 +732,9 @@
     seatSVG.addEventListener('wheel', (e) => {
         e.preventDefault();
         const direction = e.deltaY < 0 ? 1 : -1;
-        const rect = seatSVG.getBoundingClientRect();
-        const mouseX = ((e.clientX - rect.left) / rect.width) * panW + panX;
-        const mouseY = ((e.clientY - rect.top) / rect.height) * panH + panY;
+        const circle = seatSVG.getBoundingClientRect();
+        const mouseX = ((e.clientX - circle.left) / circle.width) * panW + panX;
+        const mouseY = ((e.clientY - circle.top) / circle.height) * panH + panY;
         setUserZoom(userZoomLevel + direction * zoomStep, mouseX, mouseY);
     }, { passive: false });
     // --- Reset Button ---
@@ -657,18 +763,18 @@
         selectedDisplay.textContent = `Selected Seats: ${[...selectedSeats].join(', ') || 'None'}`;
         totalDisplay.textContent = `Total: ₹${selectedSeats.size * pricePerSeat}`;
         if (seatMapType === 'svg') {
-            const seatRects = seatSVG.querySelectorAll('rect');
-            seatRects.forEach((rect, idx) => {
-                const seatRect = rect;
-                const seatId = seatRect.getAttribute('data-seat-id') || `${idx}`;
+            const seatCircles = seatSVG.querySelectorAll('circle[data-seat-id]');
+            seatCircles.forEach((circle, idx) => {
+                const seatCircle = circle;
+                const seatId = seatCircle.getAttribute('data-seat-id') || `${idx}`;
                 if (occupiedSeats.has(seatId)) {
-                    seatRect.setAttribute('fill', '#d32f2f');
+                    seatCircle.setAttribute('fill', '#d32f2f');
                 }
                 else if (selectedSeats.has(seatId)) {
-                    seatRect.setAttribute('fill', '#4caf50');
+                    seatCircle.setAttribute('fill', '#4caf50');
                 }
-                else if (seatRect.getAttribute('width') && seatRect.getAttribute('height') && parseFloat(seatRect.getAttribute('width') || "0") < 50 && parseFloat(seatRect.getAttribute('height') || "0") < 50) {
-                    seatRect.setAttribute('fill', '#e0e0e0');
+                else if (seatCircle.getAttribute('r') && parseFloat(seatCircle.getAttribute('r') || "0") < 25) {
+                    seatCircle.setAttribute('fill', '#e0e0e0');
                 }
             });
         }
@@ -711,18 +817,17 @@
                 const seatId = String.fromCharCode(65 + r) + (c + 1);
                 const x = c * (seatSize + gap);
                 const y = r * (seatSize + gap);
-                const rect = document.createElementNS(svgNS, 'rect');
-                rect.setAttribute('x', x.toString());
-                rect.setAttribute('y', y.toString());
-                rect.setAttribute('width', seatSize.toString());
-                rect.setAttribute('height', seatSize.toString());
-                rect.setAttribute('fill', occupiedSeats.has(seatId) ? '#d32f2f' : '#e0e0e0');
-                rect.setAttribute('stroke', '#444');
-                rect.setAttribute('data-seat-id', seatId);
+                const circle = document.createElementNS(svgNS, 'circle');
+                circle.setAttribute('cx', (x + seatSize / 2).toString());
+                circle.setAttribute('cy', (y + seatSize / 2).toString());
+                circle.setAttribute('r', (seatSize / 2).toString());
+                circle.setAttribute('fill', occupiedSeats.has(seatId) ? '#d32f2f' : '#e0e0e0');
+                circle.setAttribute('stroke', '#444');
+                circle.setAttribute('data-seat-id', seatId);
                 if (!occupiedSeats.has(seatId)) {
-                    rect.style.cursor = 'pointer';
+                    circle.style.cursor = 'pointer';
                 }
-                seatSVG.appendChild(rect);
+                seatSVG.appendChild(circle);
             }
         }
     }
@@ -768,27 +873,28 @@
     // --- Layout Management ---
     function fixDuplicateSeatIds(svg) {
         const ids = new Set();
-        const rects = svg.querySelectorAll('rect');
+        const circles = svg.querySelectorAll('circle[data-seat-id]');
         let counter = 1;
-        rects.forEach(rect => {
+        circles.forEach(circle => {
             var _a;
-            let id = (_a = rect.getAttribute('data-seat-id')) === null || _a === void 0 ? void 0 : _a.trim();
+            let id = (_a = circle.getAttribute('data-seat-id')) === null || _a === void 0 ? void 0 : _a.trim();
             if (!id || ids.has(id.toLowerCase())) {
                 // Assign a new unique ID
                 while (ids.has(`seat${counter}`.toLowerCase()))
                     counter++;
                 id = `Seat${counter}`;
-                rect.setAttribute('data-seat-id', id);
+                circle.setAttribute('data-seat-id', id);
             }
             ids.add(id.toLowerCase());
         });
     }
     function countAvailableSeats() {
-        const seatRects = seatSVG.querySelectorAll('rect');
+        const seatCircles = seatSVG.querySelectorAll('circle[data-seat-id]');
         let count = 0;
-        seatRects.forEach(rect => {
-            const seatId = rect.getAttribute('data-seat-id');
-            if (seatId && !occupiedSeats.has(seatId))
+        seatCircles.forEach(circle => {
+            const seatId = circle.getAttribute('data-seat-id');
+            // Only count if seatId is non-empty and not occupied
+            if (seatId && seatId.trim() !== '' && !occupiedSeats.has(seatId))
                 count++;
         });
         return count;
@@ -830,7 +936,7 @@
     updateSavedLayoutsDropdown();
     seatSVG.addEventListener('click', (e) => {
         const target = e.target;
-        if (target.tagName === 'rect' &&
+        if (target.tagName === 'circle' &&
             target.hasAttribute('data-seat-id') &&
             !occupiedSeats.has(target.getAttribute('data-seat-id'))) {
             const seatId = target.getAttribute('data-seat-id');
@@ -839,34 +945,33 @@
     });
     // --- Seat Selection Logic ---
     function attachSVGSeatListeners() {
-        const seatRects = seatSVG.querySelectorAll('rect');
-        seatRects.forEach((rect, idx) => {
-            const seatRect = rect;
-            const seatId = seatRect.getAttribute('data-seat-id') || `${idx}`;
-            const width = parseFloat(seatRect.getAttribute('width') || "0");
-            const height = parseFloat(seatRect.getAttribute('height') || "0");
-            let x = seatRect.hasAttribute('x') ? parseFloat(seatRect.getAttribute('x') || "0") : undefined;
-            let y = seatRect.hasAttribute('y') ? parseFloat(seatRect.getAttribute('y') || "0") : undefined;
-            if (x === undefined || y === undefined) {
-                const bbox = seatRect.getBBox();
-                x = bbox.x;
-                y = bbox.y;
+        const seatCircles = seatSVG.querySelectorAll('circle');
+        seatCircles.forEach((circle, idx) => {
+            const seatCircle = circle;
+            const seatId = seatCircle.getAttribute('data-seat-id') || `${idx}`;
+            const radius = parseFloat(seatCircle.getAttribute('r') || "0");
+            let cx = seatCircle.hasAttribute('cx') ? parseFloat(seatCircle.getAttribute('cx') || "0") : undefined;
+            let cy = seatCircle.hasAttribute('cy') ? parseFloat(seatCircle.getAttribute('cy') || "0") : undefined;
+            if (cx === undefined || cy === undefined) {
+                const bbox = seatCircle.getBBox();
+                cx = bbox.x + bbox.width / 2;
+                cy = bbox.y + bbox.height / 2;
             }
-            if ((x === 0 && y === 0 && !seatRect.hasAttribute('data-seat-id')) || width === 0 || height === 0) {
+            if ((cx === 0 && cy === 0 && !seatCircle.hasAttribute('data-seat-id')) || radius === 0) {
                 return;
             }
-            if (width < 50 && height < 50) {
-                seatRect.style.cursor = 'pointer';
+            if (radius < 25) {
+                seatCircle.style.cursor = 'pointer';
                 if (!occupiedSeats.has(seatId)) {
-                    seatRect.setAttribute('fill', '#e0e0e0');
+                    seatCircle.setAttribute('fill', '#e0e0e0');
                 }
                 else {
-                    seatRect.setAttribute('fill', '#d32f2f');
+                    seatCircle.setAttribute('fill', '#d32f2f');
                 }
             }
             else {
-                seatRect.setAttribute('fill', '#bdbdbd');
-                seatRect.style.cursor = 'default';
+                seatCircle.setAttribute('fill', '#bdbdbd');
+                seatCircle.style.cursor = 'default';
             }
         });
     }
@@ -895,14 +1000,14 @@
         alert(`You can now select up to ${maxSelectableSeats} seats.`);
         return true;
     }
-    function toggleSVGSeat(seatId, rect) {
+    function toggleSVGSeat(seatId, circle) {
         if (maxSelectableSeats === null) {
             if (!promptForSeatCount())
                 return;
         }
         if (selectedSeats.has(seatId)) {
             selectedSeats.delete(seatId);
-            rect.setAttribute('fill', '#e0e0e0');
+            circle.setAttribute('fill', '#e0e0e0');
         }
         else {
             if (selectedSeats.size >= (maxSelectableSeats !== null && maxSelectableSeats !== void 0 ? maxSelectableSeats : 0)) {
@@ -910,7 +1015,7 @@
                 return;
             }
             selectedSeats.add(seatId);
-            rect.setAttribute('fill', '#4caf50');
+            circle.setAttribute('fill', '#4caf50');
         }
         updateUI();
     }
@@ -962,9 +1067,9 @@
     function getNextAvailableDesignerSeatId() {
         // Collect all used numbers from data-seat-id attributes
         const usedNumbers = new Set();
-        const rects = designerSVG.querySelectorAll('rect');
-        rects.forEach(rect => {
-            const id = rect.getAttribute('data-seat-id');
+        const circles = designerSVG.querySelectorAll('circle');
+        circles.forEach(circle => {
+            const id = circle.getAttribute('data-seat-id');
             if (id && /^Seat\d+$/.test(id)) {
                 const num = parseInt(id.replace('Seat', ''), 10);
                 if (!isNaN(num))
@@ -992,8 +1097,6 @@
     function makeDraggable(group) {
         group.addEventListener('mousedown', (e) => {
             justDragged = false;
-            if (isRotating)
-                return;
             if (roleSelect.value !== 'admin')
                 return;
             dragTarget = group;
@@ -1008,30 +1111,6 @@
             e.stopPropagation();
         });
     }
-    designerSVG.addEventListener('mousemove', (e) => {
-        if (dragTarget && roleSelect.value === 'admin') {
-            const dx = e.clientX - dragStart.x;
-            const dy = e.clientY - dragStart.y;
-            let tx = dragStart.tx + dx;
-            let ty = dragStart.ty + dy;
-            // Clamp tx, ty to SVG bounds
-            const svgRect = designerSVG.getBoundingClientRect();
-            const groupRect = dragTarget.getBBox();
-            tx = Math.max(0, Math.min(tx, svgRect.width - groupRect.width));
-            ty = Math.max(0, Math.min(ty, svgRect.height - groupRect.height));
-            // Keep any rotation
-            const transform = dragTarget.getAttribute('transform') || '';
-            const rotMatch = /rotate\(([^)]+)\)/.exec(transform);
-            let rotPart = '';
-            if (rotMatch)
-                rotPart = ` rotate(${rotMatch[1]})`;
-            dragTarget.setAttribute('transform', `translate(${tx},${ty})${rotPart}`);
-            // Move handle visually
-            if (selectedDesignerSeat && selectedDesignerSeat.parentNode === dragTarget) {
-                showRotationHandle(selectedDesignerSeat);
-            }
-        }
-    });
     designerSVG.addEventListener('mouseup', () => {
         if (dragTarget) {
             justDragged = true;
@@ -1055,59 +1134,52 @@
                 justDragged = false;
                 return;
             }
-            if (justRotated) {
-                justRotated = false; // Reset the flag
-                return;
-            }
-            if (isRotating) {
-                isRotating = false; // Stop rotation on click
-                return; // Ignore clicks while rotating
-            }
             if (!addMode) {
                 if (e.target === designerSVG) {
                     if (selectedDesignerSeat)
                         selectedDesignerSeat.setAttribute('stroke', '#222');
                     selectedDesignerSeat = null;
                     seatIdInput.value = '';
-                    // Remove rotation handle 
-                    if (rotationHandle) {
-                        rotationHandle.remove();
-                        rotationHandle = null;
-                    }
                 }
                 return;
             }
             if (e.target !== designerSVG)
                 return;
-            const rect = document.createElementNS(svgNS, 'rect');
+            const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            const circle = document.createElementNS(svgNS, 'circle');
             const group = document.createElementNS(svgNS, 'g');
-            rect.setAttribute('x', '0');
-            rect.setAttribute('y', '0');
-            rect.setAttribute('width', '20');
-            rect.setAttribute('height', '15');
-            rect.setAttribute('fill', '#49D44B');
-            rect.setAttribute('stroke', '#222');
-            rect.setAttribute('data-seat-id', getNextAvailableDesignerSeatId());
-            rect.style.cursor = 'pointer';
-            rect.addEventListener('click', (evt) => {
-                evt.stopPropagation();
-                selectDesignerSeat(rect);
+            circle.setAttribute('cx', svgCoords.x.toString());
+            circle.setAttribute('cy', svgCoords.y.toString());
+            circle.setAttribute('r', '7');
+            circle.setAttribute('fill', '#49D44B');
+            circle.setAttribute('stroke', '#222');
+            circle.setAttribute('data-seat-id', getNextAvailableDesignerSeatId());
+            circle.style.cursor = 'pointer';
+            circle.setAttribute('pointer-events', 'all');
+            circle.addEventListener('click', (evt) => {
+                selectDesignerSeat(circle);
             });
-            group.appendChild(rect);
-            group.setAttribute('transform', `translate(${e.offsetX},${e.offsetY})`);
+            group.appendChild(circle);
             designerSVG.appendChild(group);
-            makeDraggable(group); // Pass the group, not the rect
-            selectDesignerSeat(rect);
+            makeDraggable(group); // Pass the group, not the circle
+            selectDesignerSeat(circle);
         });
     }
-    function selectDesignerSeat(rect) {
-        if (selectedDesignerSeat) {
-            selectedDesignerSeat.setAttribute('stroke', '#222');
+    function selectDesignerSeat(circle) {
+        // Only apply stroke if this is a seat (not a pen tool anchor)
+        if (circle.hasAttribute('data-seat-id')) {
+            if (selectedDesignerSeat) {
+                selectedDesignerSeat.setAttribute('stroke', '#222');
+            }
+            selectedDesignerSeat = circle;
+            circle.setAttribute('stroke', '#f00');
+            seatIdInput.value = circle.getAttribute('data-seat-id') || '';
         }
-        selectedDesignerSeat = rect;
-        rect.setAttribute('stroke', '#f00');
-        seatIdInput.value = rect.getAttribute('data-seat-id') || '';
-        showRotationHandle(rect);
+        else {
+            // For pen tool anchors, do not set stroke
+            selectedDesignerSeat = null;
+            seatIdInput.value = '';
+        }
     }
     updateSeatIdBtn.addEventListener('click', () => {
         var _a;
@@ -1118,10 +1190,10 @@
                 return;
             }
             // Check for duplicate ID (case-insensitive, trimmed)
-            const rects = designerSVG.querySelectorAll('rect');
-            for (const rect of Array.from(rects)) {
-                if (rect !== selectedDesignerSeat &&
-                    ((_a = rect.getAttribute('data-seat-id')) === null || _a === void 0 ? void 0 : _a.trim().toLowerCase()) === newId.toLowerCase()) {
+            const circles = designerSVG.querySelectorAll('circle');
+            for (const circle of Array.from(circles)) {
+                if (circle !== selectedDesignerSeat &&
+                    ((_a = circle.getAttribute('data-seat-id')) === null || _a === void 0 ? void 0 : _a.trim().toLowerCase()) === newId.toLowerCase()) {
                     alert('This Seat ID is already used. Please choose a unique ID.');
                     return;
                 }
@@ -1136,10 +1208,6 @@
             designerSVG.removeChild(group);
             selectedDesignerSeat = null;
             seatIdInput.value = '';
-            if (rotationHandle) {
-                rotationHandle.remove();
-                rotationHandle = null;
-            }
         }
     });
 })();

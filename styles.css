@@ -79,4 +79,15 @@ button:hover {
   background-color: #0056b3;
 }
 
+svg {
+  width: 100%;
+  max-width: 1000px;
+  height: auto;
+}
 
+#seatSVG circle {
+  cursor: default;
+}
+#seatSVG circle[data-seat-id] {
+  cursor: pointer;
+}
