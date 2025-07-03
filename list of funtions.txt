@@ -28,6 +28,10 @@ convert js to ts
 
 seats make circle not rect - done 
 user side zoom - done
-roatate path by 45 deg - done
-drag path - 
+roatate path/shape by 90 deg - done
+add shapes(rect,circle) : able to resize - done [give dot at circle centre just for aligning it should move with centre as its changed or dragged]
+drag path - done
+text on svg : should work with zoom as well : with the scale - 
+add image behind svg for tracing layout -
 
+fix resizing rect  after rotating(make the anchor point for resiszing one) - 

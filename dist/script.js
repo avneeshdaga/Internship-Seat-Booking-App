@@ -45,6 +45,9 @@
     const drawCurveBtn = document.getElementById('drawCurveBtn');
     const rotateLeftBtn = document.getElementById('rotateLeftBtn');
     const rotateRightBtn = document.getElementById('rotateRightBtn');
+    const addCircleBtn = document.getElementById('addCircleBtn');
+    const addRectBtn = document.getElementById('addRectBtn');
+    const addTextBtn = document.getElementById('addTextBtn');
     // Designer SVG pan/zoom state
     let designerOriginalViewBox = designerSVG.getAttribute('viewBox');
     if (!designerOriginalViewBox) {
@@ -59,6 +62,32 @@
     const designerZoomStep = 0.04;
     let isDesignerPanning = false;
     let designerPanStart = { x: 0, y: 0 };
+    // --- Original View ---
+    const svgWidth = seatSVG.width.baseVal.value;
+    const svgHeight = seatSVG.height.baseVal.value;
+    // Always force the viewBox to match the SVG's width/height
+    const originalViewBox = `0 0 ${svgWidth} ${svgHeight}`;
+    seatSVG.setAttribute('viewBox', originalViewBox);
+    let [viewX, viewY, viewW, viewH] = [0, 0, svgWidth, svgHeight];
+    let panX = viewX, panY = viewY, panW = viewW, panH = viewH;
+    let isPathDragging = false;
+    let pathDragStart = { x: 0, y: 0 };
+    let shapeMode = 'none';
+    let selectedShape = null;
+    let isShapeDragging = false;
+    let shapeDragStart = { x: 0, y: 0, origX: 0, origY: 0, origAngle: 0, w: 0, h: 0 };
+    let rectMode = false;
+    let selectedRectPath = null;
+    let isRectPathDragging = false;
+    let rectPathDragStart = { x: 0, y: 0, points: [] };
+    addRectBtn.addEventListener('click', () => {
+        rectMode = !rectMode;
+        addRectBtn.style.background = rectMode ? "#4caf50" : "";
+    });
+    addCircleBtn.addEventListener('click', () => {
+        shapeMode = shapeMode === 'circle' ? 'none' : 'circle';
+        addCircleBtn.style.background = shapeMode === 'circle' ? "#4caf50" : "";
+    });
     designerZoomResetBtn.addEventListener('click', () => {
         designerPanX = designerViewX;
         designerPanY = designerViewY;
@@ -66,6 +95,237 @@
         designerPanH = designerViewH;
         setDesignerZoom(1);
     });
+    designerSVG.addEventListener('mouseup', () => {
+        dragTarget = null;
+    });
+    function addRectResizeHandle(path) {
+        // Remove old handle if any
+        if (path._resizeHandle) {
+            path._resizeHandle.remove();
+        }
+        // Get points (bottom right is points[2])
+        const points = path._rectPoints;
+        setInterval(() => { console.log({ points }); }, 5000);
+        const handle = document.createElementNS(svgNS, 'circle');
+        handle.setAttribute('r', '3');
+        handle.setAttribute('fill', '#000');
+        handle.style.cursor = 'nwse-resize';
+        designerSVG.appendChild(handle);
+        // Helper to update handle position
+        function updateHandle() {
+            // Find the point with the largest x+y (visual bottom-right)
+            let idx = 0;
+            let maxSum = -Infinity;
+            for (let i = 0; i < points.length; i++) {
+                const sum = points[i].x + points[i].y;
+                if (sum > maxSum) {
+                    maxSum = sum;
+                    idx = i;
+                }
+            }
+            handle.setAttribute('cx', points[idx].x.toString());
+            handle.setAttribute('cy', points[idx].y.toString());
+            handle.cornerIdx = idx; // Store index for resizing
+        }
+        updateHandle();
+        // Store for later updates
+        path._resizeHandle = handle;
+        handle._updateHandle = updateHandle;
+        // --- Resize logic ---
+        let isResizing = false;
+        let startPt = { x: 0, y: 0 };
+        let origPt = { x: 0, y: 0 };
+        let origOppPt = { x: 0, y: 0 };
+        handle.addEventListener('mousedown', (e) => {
+            var _a;
+            e.stopPropagation();
+            isResizing = true;
+            startPt = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            // Use the current bottom-right index for resizing
+            const cornerIdx = (_a = handle._cornerIdx) !== null && _a !== void 0 ? _a : 2;
+            origPt = Object.assign({}, points[cornerIdx]);
+            // Opposite corner is the one diagonally across
+            origOppPt = Object.assign({}, points[(cornerIdx + 2) % 4]);
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+            // Save for use in onMove
+            handle._cornerIdx = cornerIdx;
+        });
+        function onMove(e) {
+            var _a;
+            if (!isResizing)
+                return;
+            const curr = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            const cornerIdx = (_a = handle._cornerIdx) !== null && _a !== void 0 ? _a : 2;
+            const oppIdx = (cornerIdx + 2) % 4;
+            const points = path._rectPoints;
+            // Move the selected corner
+            points[cornerIdx].x = curr.x;
+            points[cornerIdx].y = curr.y;
+            // Find the two adjacent corners
+            const adj1 = (cornerIdx + 1) % 4;
+            const adj2 = (cornerIdx + 3) % 4;
+            // Project the adjacent corners onto the lines formed by the opposite and new handle position
+            // This keeps the shape a rectangle (parallelogram after rotation)
+            points[adj1].x = points[cornerIdx].x;
+            points[adj1].y = points[oppIdx].y;
+            points[adj2].x = points[oppIdx].x;
+            points[adj2].y = points[cornerIdx].y;
+            updateRectPath(path, points);
+            updateHandle();
+        }
+        function onUp() {
+            isResizing = false;
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        }
+    }
+    function rotateSelectedRectPath(angleDeg) {
+        if (!selectedRectPath)
+            return;
+        let points = selectedRectPath._rectPoints;
+        // Find center
+        const cx = points.reduce((sum, pt) => sum + pt.x, 0) / 4;
+        const cy = points.reduce((sum, pt) => sum + pt.y, 0) / 4;
+        const angleRad = angleDeg * Math.PI / 180;
+        // Update points IN PLACE
+        for (let i = 0; i < points.length; i++) {
+            const pt = points[i];
+            const dx = pt.x - cx, dy = pt.y - cy;
+            pt.x = cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
+            pt.y = cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+        }
+        updateRectPath(selectedRectPath, points);
+    }
+    // Attach to your rotate buttons:
+    rotateLeftBtn.addEventListener('click', () => {
+        if (selectedRectPath)
+            rotateSelectedRectPath(-90);
+    });
+    rotateRightBtn.addEventListener('click', () => {
+        if (selectedRectPath)
+            rotateSelectedRectPath(90);
+    });
+    function selectRectPath(path) {
+        if (selectedRectPath && selectedRectPath !== path) {
+            selectedRectPath.setAttribute('stroke', '#000');
+        }
+        selectedRectPath = path;
+        path.setAttribute('stroke', '#f44336');
+    }
+    function makeRectPathInteractive(path) {
+        // Select on click
+        path.addEventListener('click', (e) => {
+            e.stopPropagation();
+            selectRectPath(path);
+        });
+        // Drag on mousedown
+        path.addEventListener('mousedown', (e) => {
+            if (roleSelect.value !== 'admin')
+                return;
+            if (selectedRectPath !== path)
+                return;
+            isRectPathDragging = true;
+            rectPathDragStart.x = e.clientX;
+            rectPathDragStart.y = e.clientY;
+            // Deep copy points
+            rectPathDragStart.points = path._rectPoints.map(pt => (Object.assign({}, pt)));
+            e.stopPropagation();
+        });
+    }
+    // Drag logic (in your window mousemove handler)
+    window.addEventListener('mousemove', (e) => {
+        if (isRectPathDragging && selectedRectPath) {
+            const svgCoords1 = getSVGCoords(designerSVG, rectPathDragStart.x, rectPathDragStart.y);
+            const svgCoords2 = getSVGCoords(designerSVG, e.clientX, e.clientY);
+            const dx = svgCoords2.x - svgCoords1.x;
+            const dy = svgCoords2.y - svgCoords1.y;
+            const origPoints = rectPathDragStart.points;
+            // Instead of creating a new array, update the existing one:
+            const points = selectedRectPath._rectPoints;
+            for (let i = 0; i < points.length; i++) {
+                points[i].x = origPoints[i].x + dx;
+                points[i].y = origPoints[i].y + dy;
+            }
+            updateRectPath(selectedRectPath, points);
+        }
+    });
+    window.addEventListener('mouseup', () => {
+        isRectPathDragging = false;
+    });
+    // Update path "d" from points
+    function updateRectPath(path, points) {
+        const d = `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y} L ${points[2].x} ${points[2].y} L ${points[3].x} ${points[3].y} Z`;
+        path.setAttribute('d', d);
+        // Update handle if present
+        if (path._resizeHandle) {
+            path._resizeHandle._updateHandle();
+        }
+    }
+    // Shape resizing 
+    function makeShapeInteractive(shape) {
+        // Remove old handles if any
+        if (shape._resizeHandles) {
+            shape._resizeHandles.forEach((h) => h.remove());
+        }
+        // --- CIRCLE LOGIC ---
+        if (shape instanceof SVGCircleElement) {
+            // Circle: 1 handle on right edge
+            const handle = document.createElementNS(svgNS, 'circle');
+            handle.setAttribute('r', '3');
+            handle.setAttribute('fill', '#000');
+            handle.style.cursor = 'ew-resize';
+            handle.style.pointerEvents = 'all';
+            designerSVG.appendChild(handle);
+            const updateHandle = () => {
+                const cx = parseFloat(shape.getAttribute('cx') || '0');
+                const cy = parseFloat(shape.getAttribute('cy') || '0');
+                const r = parseFloat(shape.getAttribute('r') || '0');
+                handle.setAttribute('cx', (cx + r).toString());
+                handle.setAttribute('cy', cy.toString());
+                designerSVG.appendChild(handle);
+            };
+            handle.__updateHandle = updateHandle;
+            let isResizing = false;
+            let start = { x: 0, r: 0 };
+            handle.addEventListener('mousedown', (e) => {
+                e.stopPropagation();
+                isResizing = true;
+                start.x = e.clientX;
+                start.r = parseFloat(shape.getAttribute('r') || '0');
+                function onMove(ev) {
+                    if (!isResizing)
+                        return;
+                    const dx = ev.clientX - start.x;
+                    let newR = Math.max(5, start.r + dx);
+                    shape.setAttribute('r', newR.toString());
+                    updateHandle();
+                }
+                function onUp() {
+                    isResizing = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                }
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            }); // save
+            // --- DRAG LOGIC ---
+            shape.addEventListener('mousedown', (e) => {
+                if (e.shiftKey)
+                    return; // Don't drag if resizing
+                isShapeDragging = true;
+                shapeDragStart.x = e.clientX;
+                shapeDragStart.y = e.clientY;
+                shapeDragStart.origX = parseFloat(shape.getAttribute('cx') || '0');
+                shapeDragStart.origY = parseFloat(shape.getAttribute('cy') || '0');
+                selectedShape = shape;
+                e.stopPropagation();
+            });
+            // --- INITIAL HANDLE POSITION ---
+            updateHandle();
+            shape._resizeHandles = [handle];
+        }
+    }
     // --- Designer SVG Zoom/Pan Logic ---
     function setDesignerZoom(zoom, centerX, centerY) {
         designerZoomLevel = Math.max(designerMinZoom, Math.min(designerMaxZoom, zoom));
@@ -241,7 +501,7 @@
         }
     });
     window.addEventListener('mousemove', (e) => {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         // --- 1. Pen Tool anchor/handle dragging ---
         if (penDragging && (currentPenPath || selectedPenPath)) {
             const pathObj = currentPenPath || selectedPenPath;
@@ -310,17 +570,49 @@
                 return;
             }
         }
-        // --- 2. Group (seat) dragging ---
+        // --- 2. Group (shape) dragging ---
         if (dragTarget && roleSelect.value === 'admin') {
             designerSVG.style.cursor = 'grab';
+            // Extract current translation and rotation (with center)
+            const transform = dragTarget.getAttribute('transform') || '';
+            const transMatch = /translate\(([^,]+),([^)]+)\)/.exec(transform);
+            const rotMatch = /rotate\(([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)/.exec(transform);
+            let prevTx = 0, prevTy = 0;
+            if (transMatch) {
+                prevTx = parseFloat(transMatch[1]);
+                prevTy = parseFloat(transMatch[2]);
+            }
+            let angle = 0, rotCx = 0, rotCy = 0;
+            if (rotMatch) {
+                angle = parseFloat(rotMatch[1]);
+                rotCx = parseFloat(rotMatch[2]);
+                rotCy = parseFloat(rotMatch[3]);
+            }
+            // Calculate mouse movement in screen coords
             const dx = e.clientX - dragStart.x;
             const dy = e.clientY - dragStart.y;
-            const tx = dragStart.tx + dx;
-            const ty = dragStart.ty + dy;
-            dragTarget.setAttribute('transform', `translate(${tx},${ty})`);
+            // Project movement into the rotated coordinate system
+            let tx = dragStart.tx, ty = dragStart.ty;
+            if (angle !== 0) {
+                const rad = angle * Math.PI / 180;
+                const localDx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
+                const localDy = dx * Math.sin(-rad) + dy * Math.cos(-rad);
+                tx = dragStart.tx + localDx;
+                ty = dragStart.ty + localDy;
+            }
+            else {
+                tx = dragStart.tx + dx;
+                ty = dragStart.ty + dy;
+            }
+            // Rebuild transform string, preserving rotation center
+            let rotPart = '';
+            if (rotMatch) {
+                rotPart = ` rotate(${angle} ${rotCx} ${rotCy})`;
+            }
+            dragTarget.setAttribute('transform', `translate(${tx},${ty})${rotPart}`);
         }
         else {
-            designerSVG.style.cursor = '';
+            designerSVG.style.cursor = 'click';
         }
         // --- 3. Preview logic ---
         if (penMode && !penDragging && currentPenPath) {
@@ -391,10 +683,58 @@
             seatSVG.setAttribute('viewBox', `${panX} ${panY} ${panW} ${panH}`);
             return;
         }
+        // --- 6. Path dragging ---
+        if (isPathDragging && selectedPenPath) {
+            const dx = e.clientX - pathDragStart.x;
+            const dy = e.clientY - pathDragStart.y;
+            pathDragStart = { x: e.clientX, y: e.clientY };
+            // Convert dx/dy from screen to SVG coordinates
+            const svgCoords1 = getSVGCoords(designerSVG, 0, 0);
+            const svgCoords2 = getSVGCoords(designerSVG, dx, dy);
+            const deltaX = svgCoords2.x - svgCoords1.x;
+            const deltaY = svgCoords2.y - svgCoords1.y;
+            for (const pt of selectedPenPath.points) {
+                pt.x += deltaX;
+                pt.y += deltaY;
+                if (pt.handleIn) {
+                    pt.handleIn.x += deltaX;
+                    pt.handleIn.y += deltaY;
+                }
+                if (pt.handleOut) {
+                    pt.handleOut.x += deltaX;
+                    pt.handleOut.y += deltaY;
+                }
+            }
+            updatePenPath(selectedPenPath, false);
+            return;
+        }
+        // --- 7. Shape dragging/resizing ---
+        if (isShapeDragging && selectedShape) {
+            if (selectedShape instanceof SVGCircleElement) {
+                // For circles, just move cx/cy as before (no rotation needed)
+                const svgCoords1 = getSVGCoords(designerSVG, shapeDragStart.x, shapeDragStart.y);
+                const svgCoords2 = getSVGCoords(designerSVG, e.clientX, e.clientY);
+                const dx = svgCoords2.x - svgCoords1.x;
+                const dy = svgCoords2.y - svgCoords1.y;
+                selectedShape.setAttribute('cx', (shapeDragStart.origX + dx).toString());
+                selectedShape.setAttribute('cy', (shapeDragStart.origY + dy).toString());
+                if ((_g = selectedShape._resizeHandles) === null || _g === void 0 ? void 0 : _g[0]) {
+                    const updateHandle = selectedShape._resizeHandles[0].__updateHandle;
+                    if (updateHandle)
+                        updateHandle();
+                }
+                return;
+            }
+        }
     });
     // --- Pen Tool Mouse Up (End Drag) ---
+    let isResizing = false;
     window.addEventListener('mouseup', () => {
         // --- End all drag/rotate states ---
+        isResizing = false;
+        isShapeDragging = false;
+        selectedShape = null;
+        isPathDragging = false;
         isDesignerPanning = false;
         penDragging = null;
         designerSVG.style.cursor = '';
@@ -468,7 +808,7 @@
             (_c = pt.handleOutCircle) === null || _c === void 0 ? void 0 : _c.setAttribute('fill', '#bbb');
         });
         finishedPenPaths.push(currentPenPath);
-        currentPenPath.path.style.cursor = "pointer";
+        currentPenPath.path.style.cursor = 'pointer';
         const thisPath = currentPenPath;
         currentPenPath.path.addEventListener('click', () => {
             selectPenPath(thisPath);
@@ -492,15 +832,15 @@
         selectedPenPath = path;
         updatePenPath(path, false); // Show handles
         path.path.setAttribute('stroke', '#f44336');
+        // Dragging logic
+        path.path.onmousedown = (e) => {
+            if (!selectedPenPath)
+                return;
+            isPathDragging = true;
+            pathDragStart = { x: e.clientX, y: e.clientY };
+            e.stopPropagation();
+        };
     }
-    // --- Deselect on SVG background click ---
-    designerSVG.addEventListener('click', (e) => {
-        if (!penMode && e.target === designerSVG && selectedPenPath) {
-            updatePenPath(selectedPenPath, true);
-            selectedPenPath.path.setAttribute('stroke', '#000');
-            selectedPenPath = null;
-        }
-    });
     // --- Update Path & Handles ---
     function updatePenPath(pathObj, hideHandles = false) {
         var _a, _b, _c, _d, _e, _f;
@@ -631,14 +971,6 @@
     }
     rotateLeftBtn.addEventListener('click', () => rotateSelectedPath(-45));
     rotateRightBtn.addEventListener('click', () => rotateSelectedPath(45));
-    // --- Original View ---
-    const svgWidth = seatSVG.width.baseVal.value;
-    const svgHeight = seatSVG.height.baseVal.value;
-    // Always force the viewBox to match the SVG's width/height
-    const originalViewBox = `0 0 ${svgWidth} ${svgHeight}`;
-    seatSVG.setAttribute('viewBox', originalViewBox);
-    let [viewX, viewY, viewW, viewH] = [0, 0, svgWidth, svgHeight];
-    let panX = viewX, panY = viewY, panW = viewW, panH = viewH;
     // --- Zoom Logic ---
     function setUserZoom(zoom, centerX, centerY) {
         userZoomLevel = Math.max(minZoom, Math.min(maxZoom, zoom));
@@ -1130,6 +1462,62 @@
             addSeatBtn.style.background = addMode ? "#4caf50" : "";
         });
         designerSVG.addEventListener('click', (e) => {
+            // --- Deselect on SVG background click ---
+            if (!penMode && e.target === designerSVG && selectedPenPath) {
+                updatePenPath(selectedPenPath, true);
+                selectedPenPath.path.setAttribute('stroke', '#000');
+                selectedPenPath = null;
+            }
+            if (e.target === designerSVG && selectedRectPath) {
+                selectedRectPath.setAttribute('stroke', '#000');
+                selectedRectPath = null;
+            }
+            // --- Handle shape drawing ---
+            if (shapeMode === 'circle' && e.target === designerSVG) {
+                const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+                const circle = document.createElementNS(svgNS, 'circle');
+                circle.setAttribute('cx', svgCoords.x.toString());
+                circle.setAttribute('cy', svgCoords.y.toString());
+                circle.setAttribute('r', '40');
+                circle.setAttribute('stroke', '#000');
+                circle.setAttribute('stroke-width', '2');
+                circle.setAttribute('fill', 'none');
+                circle.style.cursor = 'grab';
+                designerSVG.appendChild(circle);
+                makeShapeInteractive(circle);
+                shapeMode = 'none';
+                addCircleBtn.style.background = "";
+            }
+            if (rectMode && e.target === designerSVG) {
+                const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+                const w = 80, h = 60;
+                const cx = svgCoords.x, cy = svgCoords.y;
+                // Rectangle corners (clockwise from top-left)
+                const points = [
+                    { x: cx - w / 2, y: cy - h / 2 },
+                    { x: cx + w / 2, y: cy - h / 2 },
+                    { x: cx + w / 2, y: cy + h / 2 },
+                    { x: cx - w / 2, y: cy + h / 2 }
+                ];
+                // Create path data
+                const d = `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y} L ${points[2].x} ${points[2].y} L ${points[3].x} ${points[3].y} Z`;
+                const path = document.createElementNS(svgNS, 'path');
+                path.setAttribute('d', d);
+                path.setAttribute('stroke', '#000');
+                path.setAttribute('stroke-width', '2');
+                path.setAttribute('fill', 'none');
+                path.style.cursor = 'pointer';
+                designerSVG.appendChild(path);
+                // Store points for manipulation BEFORE adding handle!
+                path._rectPoints = points;
+                addRectResizeHandle(path); // <-- Now points are available
+                // Add interaction
+                makeRectPathInteractive(path);
+                // Select it
+                selectRectPath(path);
+                rectMode = false;
+                addRectBtn.style.background = "";
+            }
             if (justDragged) {
                 justDragged = false;
                 return;

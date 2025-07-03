@@ -53,6 +53,9 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var drawCurveBtn = document.getElementById('drawCurveBtn');
     var rotateLeftBtn = document.getElementById('rotateLeftBtn');
     var rotateRightBtn = document.getElementById('rotateRightBtn');
+    var addRectBtn = document.getElementById('addRectBtn');
+    var addCircleBtn = document.getElementById('addCircleBtn');
+    var addTextBtn = document.getElementById('addTextBtn');
     // Designer SVG pan/zoom state
     var designerOriginalViewBox = designerSVG.getAttribute('viewBox');
     if (!designerOriginalViewBox) {
@@ -67,6 +70,31 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
     var designerZoomStep = 0.04;
     var isDesignerPanning = false;
     var designerPanStart = { x: 0, y: 0 };
+    // --- Original View ---
+    var svgWidth = seatSVG.width.baseVal.value;
+    var svgHeight = seatSVG.height.baseVal.value;
+    // Always force the viewBox to match the SVG's width/height
+    var originalViewBox = "0 0 ".concat(svgWidth, " ").concat(svgHeight);
+    seatSVG.setAttribute('viewBox', originalViewBox);
+    var _b = [0, 0, svgWidth, svgHeight], viewX = _b[0], viewY = _b[1], viewW = _b[2], viewH = _b[3];
+    var panX = viewX, panY = viewY, panW = viewW, panH = viewH;
+    var isPathDragging = false;
+    var pathDragStart = { x: 0, y: 0 };
+    var shapeMode = 'none';
+    var selectedShape = null;
+    var isShapeDragging = false;
+    var shapeDragStart = { x: 0, y: 0, origX: 0, origY: 0, origAngle: 0, w: 0, h: 0 };
+    var selectedRect = null;
+    addRectBtn.addEventListener('click', function () {
+        shapeMode = shapeMode === 'rect' ? 'none' : 'rect';
+        addRectBtn.style.background = shapeMode === 'rect' ? "#4caf50" : "";
+        addCircleBtn.style.background = "";
+    });
+    addCircleBtn.addEventListener('click', function () {
+        shapeMode = shapeMode === 'circle' ? 'none' : 'circle';
+        addCircleBtn.style.background = shapeMode === 'circle' ? "#4caf50" : "";
+        addRectBtn.style.background = "";
+    });
     designerZoomResetBtn.addEventListener('click', function () {
         designerPanX = designerViewX;
         designerPanY = designerViewY;
@@ -74,6 +102,243 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         designerPanH = designerViewH;
         setDesignerZoom(1);
     });
+    designerSVG.addEventListener('mousemove', function (e) {
+        if (dragTarget) {
+            // Extract current translation and rotation (with center)
+            var transform = dragTarget.getAttribute('transform') || '';
+            var transMatch = /translate\(([^,]+),([^)]+)\)/.exec(transform);
+            var rotMatch = /rotate\(([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)/.exec(transform);
+            var prevTx = 0, prevTy = 0;
+            if (transMatch) {
+                prevTx = parseFloat(transMatch[1]);
+                prevTy = parseFloat(transMatch[2]);
+            }
+            var angle = 0, rotCx = 0, rotCy = 0;
+            if (rotMatch) {
+                angle = parseFloat(rotMatch[1]);
+                rotCx = parseFloat(rotMatch[2]);
+                rotCy = parseFloat(rotMatch[3]);
+            }
+            // Calculate mouse movement in screen coords
+            var dx = e.clientX - dragStart.x;
+            var dy = e.clientY - dragStart.y;
+            // Project movement into the rotated coordinate system
+            var tx = dragStart.tx, ty = dragStart.ty;
+            if (angle !== 0) {
+                var rad = angle * Math.PI / 180;
+                var localDx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
+                var localDy = dx * Math.sin(-rad) + dy * Math.cos(-rad);
+                tx = dragStart.tx + localDx;
+                ty = dragStart.ty + localDy;
+            }
+            else {
+                tx = dragStart.tx + dx;
+                ty = dragStart.ty + dy;
+            }
+            // Rebuild transform string, preserving rotation center
+            var rotPart = '';
+            if (rotMatch) {
+                rotPart = " rotate(".concat(angle, " ").concat(rotCx, " ").concat(rotCy, ")");
+            }
+            dragTarget.setAttribute('transform', "translate(".concat(tx, ",").concat(ty, ")").concat(rotPart));
+            // Update handle
+            var rect = dragTarget.querySelector('rect');
+            if (rect)
+                showResizeHandle(rect);
+        }
+    });
+    designerSVG.addEventListener('mouseup', function () {
+        dragTarget = null;
+    });
+    function showResizeHandle(rect) {
+        // Remove old handle if any
+        if (rect._resizeHandle) {
+            rect._resizeHandle.remove();
+            rect._resizeHandle = null;
+        }
+        var group = rect.parentNode;
+        // Get rect geometry
+        var x = parseFloat(rect.getAttribute('x') || "0");
+        var y = parseFloat(rect.getAttribute('y') || "0");
+        var w = parseFloat(rect.getAttribute('width') || "0");
+        var h = parseFloat(rect.getAttribute('height') || "0");
+        var localHx = x + w;
+        var localHy = y + h;
+        // --- Apply rectangle's own rotation (if any) ---
+        var hx = localHx, hy = localHy;
+        var tf = rect.getAttribute('transform');
+        if (tf && tf.includes('rotate')) {
+            // Parse: rotate(angle cx cy)
+            var match = /rotate\(([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)/.exec(tf);
+            if (match) {
+                var angle = parseFloat(match[1]);
+                var cx = parseFloat(match[2]);
+                var cy = parseFloat(match[3]);
+                var rad = angle * Math.PI / 180;
+                var dx = localHx - cx;
+                var dy = localHy - cy;
+                hx = cx + dx * Math.cos(rad) - dy * Math.sin(rad);
+                hy = cy + dx * Math.sin(rad) + dy * Math.cos(rad);
+            }
+        }
+        // --- Apply group transform (if any) ---
+        var ctm = group.getCTM();
+        if (ctm) {
+            var pt = designerSVG.createSVGPoint();
+            pt.x = hx;
+            pt.y = hy;
+            var svgPt = pt.matrixTransform(ctm);
+            hx = svgPt.x;
+            hy = svgPt.y;
+        }
+        // Draw handle
+        var resizeHandle = document.createElementNS(svgNS, 'circle');
+        resizeHandle.setAttribute('cx', hx.toString());
+        resizeHandle.setAttribute('cy', hy.toString());
+        resizeHandle.setAttribute('r', '3');
+        resizeHandle.setAttribute('fill', '#000');
+        resizeHandle.style.cursor = 'nwse-resize';
+        designerSVG.appendChild(resizeHandle);
+        rect._resizeHandle = resizeHandle;
+        // --- Resize logic (unchanged) ---
+        var isResizing = false;
+        var start = { x: 0, y: 0, w: 0, h: 0 };
+        resizeHandle.addEventListener('mousedown', function (e) {
+            e.stopPropagation();
+            isResizing = true;
+            start.x = e.clientX;
+            start.y = e.clientY;
+            start.w = w;
+            start.h = h;
+            function onMove(ev) {
+                if (!isResizing)
+                    return;
+                // Calculate mouse movement in SVG coordinates
+                var svgCoords1 = getSVGCoords(designerSVG, start.x, start.y);
+                var svgCoords2 = getSVGCoords(designerSVG, ev.clientX, ev.clientY);
+                var dx = svgCoords2.x - svgCoords1.x;
+                var dy = svgCoords2.y - svgCoords1.y;
+                var newW = Math.max(10, start.w + dx);
+                var newH = Math.max(10, start.h + dy);
+                rect.setAttribute('width', newW.toString());
+                rect.setAttribute('height', newH.toString());
+                showResizeHandle(rect); // Update handle position
+            }
+            function onUp() {
+                isResizing = false;
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+            }
+            window.addEventListener('mousemove', onMove);
+            window.addEventListener('mouseup', onUp);
+        });
+    }
+    // Shape resizing 
+    function makeShapeInteractive(shape) {
+        // Remove old handles if any
+        if (shape._resizeHandles) {
+            shape._resizeHandles.forEach(function (h) { return h.remove(); });
+        }
+        // --- RECTANGLE LOGIC ---
+        if (shape instanceof SVGRectElement) {
+            // --- DRAG LOGIC ---
+            var group_1 = shape.parentNode;
+            // Attach drag to rect
+            shape.addEventListener('mousedown', function (e) {
+                if (roleSelect.value !== 'admin')
+                    return;
+                dragTarget = group_1;
+                var transform = group_1.getAttribute('transform') || '';
+                var match = /translate\(([^,]+),([^)]+)\)/.exec(transform);
+                dragStart = {
+                    x: e.clientX,
+                    y: e.clientY,
+                    tx: match ? parseFloat(match[1]) : 0,
+                    ty: match ? parseFloat(match[2]) : 0
+                };
+                e.stopPropagation();
+            });
+            // Attach drag to group (so you can drag even if you click the group, not just the rect)
+            group_1.addEventListener('mousedown', function (e) {
+                if (roleSelect.value !== 'admin')
+                    return;
+                dragTarget = group_1;
+                var transform = group_1.getAttribute('transform') || '';
+                var match = /translate\(([^,]+),([^)]+)\)/.exec(transform);
+                dragStart = {
+                    x: e.clientX,
+                    y: e.clientY,
+                    tx: match ? parseFloat(match[1]) : 0,
+                    ty: match ? parseFloat(match[2]) : 0
+                };
+                e.stopPropagation();
+            });
+            // --- SELECTION LOGIC ---
+            shape.addEventListener('click', function (e) {
+                e.stopPropagation();
+                selectRect(shape);
+            });
+            // --- INITIAL HANDLE POSITION ---
+            showResizeHandle(shape); // <-- Show handle on create
+        }
+        // --- CIRCLE LOGIC ---
+        else if (shape instanceof SVGCircleElement) {
+            // Circle: 1 handle on right edge
+            var handle_1 = document.createElementNS(svgNS, 'circle');
+            handle_1.setAttribute('r', '3');
+            handle_1.setAttribute('fill', '#000');
+            handle_1.style.cursor = 'ew-resize';
+            handle_1.style.pointerEvents = 'all';
+            designerSVG.appendChild(handle_1);
+            var updateHandle_1 = function () {
+                var cx = parseFloat(shape.getAttribute('cx') || '0');
+                var cy = parseFloat(shape.getAttribute('cy') || '0');
+                var r = parseFloat(shape.getAttribute('r') || '0');
+                handle_1.setAttribute('cx', (cx + r).toString());
+                handle_1.setAttribute('cy', cy.toString());
+                designerSVG.appendChild(handle_1);
+            };
+            handle_1.__updateHandle = updateHandle_1;
+            var isResizing_1 = false;
+            var start_1 = { x: 0, r: 0 };
+            handle_1.addEventListener('mousedown', function (e) {
+                e.stopPropagation();
+                isResizing_1 = true;
+                start_1.x = e.clientX;
+                start_1.r = parseFloat(shape.getAttribute('r') || '0');
+                function onMove(ev) {
+                    if (!isResizing_1)
+                        return;
+                    var dx = ev.clientX - start_1.x;
+                    var newR = Math.max(5, start_1.r + dx);
+                    shape.setAttribute('r', newR.toString());
+                    updateHandle_1();
+                }
+                function onUp() {
+                    isResizing_1 = false;
+                    window.removeEventListener('mousemove', onMove);
+                    window.removeEventListener('mouseup', onUp);
+                }
+                window.addEventListener('mousemove', onMove);
+                window.addEventListener('mouseup', onUp);
+            });
+            // --- DRAG LOGIC ---
+            shape.addEventListener('mousedown', function (e) {
+                if (e.shiftKey)
+                    return; // Don't drag if resizing
+                isShapeDragging = true;
+                shapeDragStart.x = e.clientX;
+                shapeDragStart.y = e.clientY;
+                shapeDragStart.origX = parseFloat(shape.getAttribute('cx') || '0');
+                shapeDragStart.origY = parseFloat(shape.getAttribute('cy') || '0');
+                selectedShape = shape;
+                e.stopPropagation();
+            });
+            // --- INITIAL HANDLE POSITION ---
+            updateHandle_1();
+            shape._resizeHandles = [handle_1];
+        }
+    }
     // --- Designer SVG Zoom/Pan Logic ---
     function setDesignerZoom(zoom, centerX, centerY) {
         designerZoomLevel = Math.max(designerMinZoom, Math.min(designerMaxZoom, zoom));
@@ -251,7 +516,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         }
     });
     window.addEventListener('mousemove', function (e) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e, _f, _g;
         // --- 1. Pen Tool anchor/handle dragging ---
         if (penDragging && (currentPenPath || selectedPenPath)) {
             var pathObj = currentPenPath || selectedPenPath;
@@ -320,17 +585,53 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
                 return;
             }
         }
-        // --- 2. Group (seat) dragging ---
+        // --- 2. Group (shape) dragging ---
         if (dragTarget && roleSelect.value === 'admin') {
             designerSVG.style.cursor = 'grab';
+            // Extract current translation and rotation (with center)
+            var transform = dragTarget.getAttribute('transform') || '';
+            var transMatch = /translate\(([^,]+),([^)]+)\)/.exec(transform);
+            var rotMatch = /rotate\(([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)/.exec(transform);
+            var prevTx = 0, prevTy = 0;
+            if (transMatch) {
+                prevTx = parseFloat(transMatch[1]);
+                prevTy = parseFloat(transMatch[2]);
+            }
+            var angle = 0, rotCx = 0, rotCy = 0;
+            if (rotMatch) {
+                angle = parseFloat(rotMatch[1]);
+                rotCx = parseFloat(rotMatch[2]);
+                rotCy = parseFloat(rotMatch[3]);
+            }
+            // Calculate mouse movement in screen coords
             var dx = e.clientX - dragStart.x;
             var dy = e.clientY - dragStart.y;
-            var tx = dragStart.tx + dx;
-            var ty = dragStart.ty + dy;
-            dragTarget.setAttribute('transform', "translate(".concat(tx, ",").concat(ty, ")"));
+            // Project movement into the rotated coordinate system
+            var tx = dragStart.tx, ty = dragStart.ty;
+            if (angle !== 0) {
+                var rad = angle * Math.PI / 180;
+                var localDx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
+                var localDy = dx * Math.sin(-rad) + dy * Math.cos(-rad);
+                tx = dragStart.tx + localDx;
+                ty = dragStart.ty + localDy;
+            }
+            else {
+                tx = dragStart.tx + dx;
+                ty = dragStart.ty + dy;
+            }
+            // Rebuild transform string, preserving rotation center
+            var rotPart = '';
+            if (rotMatch) {
+                rotPart = " rotate(".concat(angle, " ").concat(rotCx, " ").concat(rotCy, ")");
+            }
+            dragTarget.setAttribute('transform', "translate(".concat(tx, ",").concat(ty, ")").concat(rotPart));
+            // Update handle for rectangles
+            var rect = dragTarget.querySelector('rect');
+            if (rect)
+                showResizeHandle(rect);
         }
         else {
-            designerSVG.style.cursor = '';
+            designerSVG.style.cursor = 'click';
         }
         // --- 3. Preview logic ---
         if (penMode && !penDragging && currentPenPath) {
@@ -401,10 +702,59 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             seatSVG.setAttribute('viewBox', "".concat(panX, " ").concat(panY, " ").concat(panW, " ").concat(panH));
             return;
         }
+        // --- 6. Path dragging ---
+        if (isPathDragging && selectedPenPath) {
+            var dx = e.clientX - pathDragStart.x;
+            var dy = e.clientY - pathDragStart.y;
+            pathDragStart = { x: e.clientX, y: e.clientY };
+            // Convert dx/dy from screen to SVG coordinates
+            var svgCoords1 = getSVGCoords(designerSVG, 0, 0);
+            var svgCoords2 = getSVGCoords(designerSVG, dx, dy);
+            var deltaX = svgCoords2.x - svgCoords1.x;
+            var deltaY = svgCoords2.y - svgCoords1.y;
+            for (var _i = 0, _h = selectedPenPath.points; _i < _h.length; _i++) {
+                var pt = _h[_i];
+                pt.x += deltaX;
+                pt.y += deltaY;
+                if (pt.handleIn) {
+                    pt.handleIn.x += deltaX;
+                    pt.handleIn.y += deltaY;
+                }
+                if (pt.handleOut) {
+                    pt.handleOut.x += deltaX;
+                    pt.handleOut.y += deltaY;
+                }
+            }
+            updatePenPath(selectedPenPath, false);
+            return;
+        }
+        // --- 7. Shape dragging/resizing ---
+        if (isShapeDragging && selectedShape) {
+            if (selectedShape instanceof SVGCircleElement) {
+                // For circles, just move cx/cy as before (no rotation needed)
+                var svgCoords1 = getSVGCoords(designerSVG, shapeDragStart.x, shapeDragStart.y);
+                var svgCoords2 = getSVGCoords(designerSVG, e.clientX, e.clientY);
+                var dx = svgCoords2.x - svgCoords1.x;
+                var dy = svgCoords2.y - svgCoords1.y;
+                selectedShape.setAttribute('cx', (shapeDragStart.origX + dx).toString());
+                selectedShape.setAttribute('cy', (shapeDragStart.origY + dy).toString());
+                if ((_g = selectedShape._resizeHandles) === null || _g === void 0 ? void 0 : _g[0]) {
+                    var updateHandle = selectedShape._resizeHandles[0].__updateHandle;
+                    if (updateHandle)
+                        updateHandle();
+                }
+                return;
+            }
+        }
     });
     // --- Pen Tool Mouse Up (End Drag) ---
+    var isResizing = false;
     window.addEventListener('mouseup', function () {
         // --- End all drag/rotate states ---
+        isResizing = false;
+        isShapeDragging = false;
+        selectedShape = null;
+        isPathDragging = false;
         isDesignerPanning = false;
         penDragging = null;
         designerSVG.style.cursor = '';
@@ -479,7 +829,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             (_c = pt.handleOutCircle) === null || _c === void 0 ? void 0 : _c.setAttribute('fill', '#bbb');
         });
         finishedPenPaths.push(currentPenPath);
-        currentPenPath.path.style.cursor = "pointer";
+        currentPenPath.path.style.cursor = 'pointer';
         var thisPath = currentPenPath;
         currentPenPath.path.addEventListener('click', function () {
             selectPenPath(thisPath);
@@ -503,15 +853,15 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         selectedPenPath = path;
         updatePenPath(path, false); // Show handles
         path.path.setAttribute('stroke', '#f44336');
+        // Dragging logic
+        path.path.onmousedown = function (e) {
+            if (!selectedPenPath)
+                return;
+            isPathDragging = true;
+            pathDragStart = { x: e.clientX, y: e.clientY };
+            e.stopPropagation();
+        };
     }
-    // --- Deselect on SVG background click ---
-    designerSVG.addEventListener('click', function (e) {
-        if (!penMode && e.target === designerSVG && selectedPenPath) {
-            updatePenPath(selectedPenPath, true);
-            selectedPenPath.path.setAttribute('stroke', '#000');
-            selectedPenPath = null;
-        }
-    });
     // --- Update Path & Handles ---
     function updatePenPath(pathObj, hideHandles) {
         var _a, _b, _c, _d, _e, _f;
@@ -643,16 +993,55 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
         }
         updatePenPath(selectedPenPath, false);
     }
-    rotateLeftBtn.addEventListener('click', function () { return rotateSelectedPath(-45); });
-    rotateRightBtn.addEventListener('click', function () { return rotateSelectedPath(45); });
-    // --- Original View ---
-    var svgWidth = seatSVG.width.baseVal.value;
-    var svgHeight = seatSVG.height.baseVal.value;
-    // Always force the viewBox to match the SVG's width/height
-    var originalViewBox = "0 0 ".concat(svgWidth, " ").concat(svgHeight);
-    seatSVG.setAttribute('viewBox', originalViewBox);
-    var _b = [0, 0, svgWidth, svgHeight], viewX = _b[0], viewY = _b[1], viewW = _b[2], viewH = _b[3];
-    var panX = viewX, panY = viewY, panW = viewW, panH = viewH;
+    rotateLeftBtn.addEventListener('click', function () { return rotateSelectedPath(-90); });
+    rotateRightBtn.addEventListener('click', function () { return rotateSelectedPath(90); });
+    function selectRect(rect) {
+        if (selectedRect && selectedRect !== rect) {
+            selectedRect.setAttribute('stroke', '#000');
+        }
+        selectedRect = rect;
+        rect.setAttribute('stroke', '#f44336');
+        rect.removeAttribute('transform'); // Ensure no transform on rect itself
+        showResizeHandle(rect);
+    }
+    // Rectangle Rotation Logic
+    function rotateSelectedRect(angleDeg) {
+        if (!selectedRect)
+            return;
+        var group = selectedRect.parentNode;
+        // Get group center (rect center in group coordinates)
+        var x = parseFloat(selectedRect.getAttribute('x') || '0');
+        var y = parseFloat(selectedRect.getAttribute('y') || '0');
+        var w = parseFloat(selectedRect.getAttribute('width') || '0');
+        var h = parseFloat(selectedRect.getAttribute('height') || '0');
+        var cx = x + w / 2;
+        var cy = y + h / 2;
+        // Get current rotation
+        var prev = group.getAttribute('transform') || '';
+        var prevAngle = 0;
+        var prevTrans = '';
+        var rotMatch = /rotate\(([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)/.exec(prev);
+        var transMatch = /translate\(([^,]+),([^)]+)\)/.exec(prev);
+        if (rotMatch)
+            prevAngle = parseFloat(rotMatch[1]);
+        if (transMatch)
+            prevTrans = "translate(".concat(transMatch[1], ",").concat(transMatch[2], ") ");
+        var newAngle = prevAngle + angleDeg;
+        group.setAttribute('transform', "".concat(prevTrans, "rotate(").concat(newAngle, " ").concat(cx, " ").concat(cy, ")"));
+        showResizeHandle(selectedRect);
+    }
+    rotateLeftBtn.addEventListener('click', function () {
+        if (selectedPenPath)
+            rotateSelectedPath(-45);
+        else if (selectedRect)
+            rotateSelectedRect(-45);
+    });
+    rotateRightBtn.addEventListener('click', function () {
+        if (selectedPenPath)
+            rotateSelectedPath(45);
+        else if (selectedRect)
+            rotateSelectedRect(45);
+    });
     // --- Zoom Logic ---
     function setUserZoom(zoom, centerX, centerY) {
         userZoomLevel = Math.max(minZoom, Math.min(maxZoom, zoom));
@@ -1144,6 +1533,51 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
             addSeatBtn.style.background = addMode ? "#4caf50" : "";
         });
         designerSVG.addEventListener('click', function (e) {
+            // --- Deselect on SVG background click ---
+            if (!penMode && e.target === designerSVG && selectedPenPath) {
+                updatePenPath(selectedPenPath, true);
+                selectedPenPath.path.setAttribute('stroke', '#000');
+                selectedPenPath = null;
+            }
+            if (e.target === designerSVG && selectedRect) {
+                selectedRect.setAttribute('stroke', '#000');
+                selectedRect = null;
+            }
+            // --- Handle shape drawing ---
+            if (shapeMode === 'rect' && e.target === designerSVG) {
+                var svgCoords_1 = getSVGCoords(designerSVG, e.clientX, e.clientY);
+                var rect = document.createElementNS(svgNS, 'rect');
+                rect.setAttribute('x', (svgCoords_1.x - 40).toString());
+                rect.setAttribute('y', (svgCoords_1.y - 30).toString());
+                rect.setAttribute('width', '80');
+                rect.setAttribute('height', '60');
+                rect.setAttribute('stroke', '#000');
+                rect.setAttribute('stroke-width', '2');
+                rect.setAttribute('fill', 'none');
+                var group_2 = document.createElementNS(svgNS, 'g');
+                group_2.appendChild(rect);
+                designerSVG.appendChild(group_2);
+                makeDraggable(group_2);
+                makeShapeInteractive(rect);
+                showResizeHandle(rect);
+                shapeMode = 'none';
+                addRectBtn.style.background = "";
+            }
+            else if (shapeMode === 'circle' && e.target === designerSVG) {
+                var svgCoords_2 = getSVGCoords(designerSVG, e.clientX, e.clientY);
+                var circle_1 = document.createElementNS(svgNS, 'circle');
+                circle_1.setAttribute('cx', svgCoords_2.x.toString());
+                circle_1.setAttribute('cy', svgCoords_2.y.toString());
+                circle_1.setAttribute('r', '40');
+                circle_1.setAttribute('stroke', '#000');
+                circle_1.setAttribute('stroke-width', '2');
+                circle_1.setAttribute('fill', 'none');
+                circle_1.style.cursor = 'grab';
+                designerSVG.appendChild(circle_1);
+                makeShapeInteractive(circle_1);
+                shapeMode = 'none';
+                addCircleBtn.style.background = "";
+            }
             if (justDragged) {
                 justDragged = false;
                 return;
