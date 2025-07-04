@@ -57,6 +57,14 @@
   const addCircleBtn = document.getElementById('addCircleBtn') as HTMLButtonElement;
   const addRectBtn = document.getElementById('addRectBtn') as HTMLButtonElement;
   const addTextBtn = document.getElementById('addTextBtn') as HTMLButtonElement;
+  const importBgImage = document.getElementById('importBgImage') as HTMLInputElement;
+  const toggleBgImageBtn = document.getElementById('toggleBgImageBtn') as HTMLButtonElement;
+  const textEditInput = document.getElementById('textEditInput') as HTMLInputElement;
+  const textSizeSlider = document.getElementById('textSizeSlider') as HTMLInputElement;
+  const textSizeValue = document.getElementById('textSizeValue') as HTMLSpanElement;
+
+  const allSeatSizeSlider = document.getElementById('allSeatSizeSlider') as HTMLInputElement;
+  const allSeatSizeValue = document.getElementById('allSeatSizeValue') as HTMLSpanElement;
 
   // Designer SVG pan/zoom state
   let designerOriginalViewBox = designerSVG.getAttribute('viewBox');
@@ -98,6 +106,166 @@
   let isRectPathDragging = false;
   let rectPathDragStart = { x: 0, y: 0, points: [] as { x: number, y: number }[] };
 
+  let textMode = false;
+  let bgImageEl: SVGImageElement | null = null;
+  let bgImageVisible = true;
+  let justSelectedTextBox = false;
+  let selectedTextGroup: SVGGElement | null = null;
+  let selectedText: SVGTextElement | null = null;
+  let selectedTextRect: SVGRectElement | null = null;
+
+  // --- Designer SVG Pan Logic ---  
+  designerSVG.addEventListener('mousedown', (e) => {
+    // Only pan if not clicking on a shape/handle
+    if (
+      e.target !== designerSVG ||
+      penMode ||
+      isShapeDragging ||
+      isRectPathDragging ||
+      isPathDragging ||
+      dragTarget
+    ) return;
+    isDesignerPanning = true;
+    designerPanStart = { x: e.clientX, y: e.clientY };
+    designerSVG.style.cursor = 'grab';
+  });
+
+  allSeatSizeSlider.addEventListener('input', () => {
+    const newSize = parseInt(allSeatSizeSlider.value, 10);
+    allSeatSizeValue.textContent = newSize.toString();
+
+    // Update all seat circles in seatSVG
+    const seatCircles = seatSVG.querySelectorAll('circle[data-seat-id]');
+    seatCircles.forEach(circle => {
+      circle.setAttribute('r', (newSize).toString());
+    });
+
+    // Update all seat circles in designerSVG (designer side)
+    const designerCircles = designerSVG.querySelectorAll('circle[data-seat-id]');
+    designerCircles.forEach(circle => {
+      circle.setAttribute('r', (newSize).toString());
+    });
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (isDesignerPanning) {
+      const dx = (e.clientX - designerPanStart.x) * (designerPanW / designerSVG.clientWidth);
+      const dy = (e.clientY - designerPanStart.y) * (designerPanH / designerSVG.clientHeight);
+      designerPanX -= dx;
+      designerPanY -= dy;
+      designerPanStart = { x: e.clientX, y: e.clientY };
+      clampDesignerPan();
+      setDesignerZoom(designerZoomLevel);
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDesignerPanning = false;
+    designerSVG.style.cursor = '';
+  });
+
+  // Touch support for designer SVG
+  let lastDesignerTouchDist = 0;
+  designerSVG.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1) {
+      isDesignerPanning = true;
+      designerPanStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    } else if (e.touches.length === 2) {
+      isDesignerPanning = false;
+      lastDesignerTouchDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+    }
+  });
+  designerSVG.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (e.touches.length === 1 && isDesignerPanning) {
+      const dx = (e.touches[0].clientX - designerPanStart.x) * (designerPanW / designerSVG.clientWidth);
+      const dy = (e.touches[0].clientY - designerPanStart.y) * (designerPanH / designerSVG.clientHeight);
+      designerPanX -= dx;
+      designerPanY -= dy;
+      designerPanStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      clampDesignerPan();
+      setDesignerZoom(designerZoomLevel);
+    } else if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      if (lastDesignerTouchDist) {
+        const zoomChange = dist / lastDesignerTouchDist;
+        setDesignerZoom(designerZoomLevel * zoomChange);
+      }
+      lastDesignerTouchDist = dist;
+    }
+  }, { passive: false });
+  designerSVG.addEventListener('touchend', () => {
+    isDesignerPanning = false;
+    lastDesignerTouchDist = 0;
+  });
+
+  importBgImage.addEventListener('change', function (event) {
+    const file = importBgImage.files && importBgImage.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (e) {
+      // Remove old image if present
+      if (bgImageEl && bgImageEl.parentNode) {
+        bgImageEl.parentNode.removeChild(bgImageEl);
+      }
+      bgImageEl = document.createElementNS(svgNS, 'image');
+      bgImageEl.setAttribute('href', e.target?.result as string);
+      bgImageEl.setAttribute('opacity', '0.4'); // Translucent
+      bgImageEl.style.pointerEvents = 'none'; // Don't block interaction
+
+      // Get SVG size (from viewBox or width/height)
+      let svgW = designerSVG.viewBox.baseVal.width || designerSVG.width.baseVal.value;
+      let svgH = designerSVG.viewBox.baseVal.height || designerSVG.height.baseVal.value;
+
+      // Create a JS Image to get natural size
+      const img = new window.Image();
+      img.onload = function () {
+        const imgW = img.naturalWidth;
+        const imgH = img.naturalHeight;
+
+        // Calculate scale to fit image inside SVG
+        const scale = Math.min(svgW / imgW, svgH / imgH);
+        const newW = imgW * scale;
+        const newH = imgH * scale;
+        const x = (svgW - newW) / 2;
+        const y = (svgH - newH) / 2;
+
+        if (bgImageEl) {
+          bgImageEl.setAttribute('x', x.toString());
+          bgImageEl.setAttribute('y', y.toString());
+          bgImageEl.setAttribute('width', newW.toString());
+          bgImageEl.setAttribute('height', newH.toString());
+
+          // Insert as first child (bottom layer)
+          designerSVG.insertBefore(bgImageEl, designerSVG.firstChild);
+
+          bgImageVisible = true;
+          toggleBgImageBtn.textContent = "Hide Background";
+        }
+      };
+      img.src = e.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+
+  toggleBgImageBtn.addEventListener('click', () => {
+    if (!bgImageEl) return;
+    bgImageVisible = !bgImageVisible;
+    bgImageEl.style.display = bgImageVisible ? '' : 'none';
+    toggleBgImageBtn.textContent = bgImageVisible ? "Hide Background" : "Show Background";
+  });
+
+  addTextBtn.addEventListener('click', () => {
+    textMode = !textMode;
+    addTextBtn.style.background = textMode ? "#4caf50" : "";
+  });
+
   addRectBtn.addEventListener('click', () => {
     rectMode = !rectMode;
     addRectBtn.style.background = rectMode ? "#4caf50" : "";
@@ -128,7 +296,6 @@
 
     // Get points (bottom right is points[2])
     const points = (path as any)._rectPoints as { x: number, y: number }[];
-    setInterval(()=> {console.log({points})}, 5000)
     const handle = document.createElementNS(svgNS, 'circle');
     handle.setAttribute('r', '3');
     handle.setAttribute('fill', '#000');
@@ -161,47 +328,50 @@
     let startPt = { x: 0, y: 0 };
     let origPt = { x: 0, y: 0 };
     let origOppPt = { x: 0, y: 0 };
-
+    let anchorIdx = 0, handleIdx = 0;
     handle.addEventListener('mousedown', (e) => {
       e.stopPropagation();
       isResizing = true;
       startPt = getSVGCoords(designerSVG, e.clientX, e.clientY);
-      // Use the current bottom-right index for resizing
-      const cornerIdx = (handle as any)._cornerIdx ?? 2;
-      origPt = { ...points[cornerIdx] };
-      // Opposite corner is the one diagonally across
-      origOppPt = { ...points[(cornerIdx + 2) % 4] };
+
+      // Find anchor (top-left) and handle (bottom-right) once at the start
+      let minSum = Infinity, maxSum = -Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const sum = points[i].x + points[i].y;
+        if (sum < minSum) { minSum = sum; anchorIdx = i; }
+        if (sum > maxSum) { maxSum = sum; handleIdx = i; }
+      }
+      (handle as any)._anchorIdx = anchorIdx;
+      (handle as any)._handleIdx = handleIdx;
+      origPt = { ...points[handleIdx] };
+      origOppPt = { ...points[anchorIdx] }; // anchor is the fixed point
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
-
-      // Save for use in onMove
-      (handle as any)._cornerIdx = cornerIdx;
     });
 
     function onMove(e: MouseEvent) {
       if (!isResizing) return;
       const curr = getSVGCoords(designerSVG, e.clientX, e.clientY);
-      const cornerIdx = (handle as any)._cornerIdx ?? 2;
-      const oppIdx = (cornerIdx + 2) % 4;
       const points = (path as any)._rectPoints as { x: number, y: number }[];
 
-      // Move the selected corner
-      points[cornerIdx].x = curr.x;
-      points[cornerIdx].y = curr.y;
+      const anchorIdx = (handle as any)._anchorIdx;
+      const handleIdx = (handle as any)._handleIdx;
+      const adj1 = (anchorIdx + 1) % 4;
+      const adj2 = (anchorIdx + 3) % 4;
 
-      // Find the two adjacent corners
-      const adj1 = (cornerIdx + 1) % 4;
-      const adj2 = (cornerIdx + 3) % 4;
+      // Move the handle point to the cursor
+      points[handleIdx].x = curr.x;
+      points[handleIdx].y = curr.y;
 
-      // Project the adjacent corners onto the lines formed by the opposite and new handle position
-      // This keeps the shape a rectangle (parallelogram after rotation)
-      points[adj1].x = points[cornerIdx].x;
-      points[adj1].y = points[oppIdx].y;
+      // Project adjacents:
+      // adj1: shares y with anchor, x with handle
+      points[adj1].x = curr.x;
+      points[adj1].y = points[anchorIdx].y;
+      // adj2: shares x with anchor, y with handle
+      points[adj2].x = points[anchorIdx].x;
+      points[adj2].y = curr.y;
 
-      points[adj2].x = points[oppIdx].x;
-      points[adj2].y = points[cornerIdx].y;
-
-
+      // Anchor stays fixed!
       updateRectPath(path, points);
       updateHandle();
     }
@@ -303,7 +473,6 @@
     if ((shape as any)._resizeHandles) {
       (shape as any)._resizeHandles.forEach((h: SVGCircleElement) => h.remove());
     }
-
     // --- CIRCLE LOGIC ---
     if (shape instanceof SVGCircleElement) {
       // Circle: 1 handle on right edge
@@ -363,6 +532,29 @@
         (e as MouseEvent).stopPropagation();
       });
 
+      //  Drag centre dot
+      window.addEventListener('mousemove', (e) => {
+        if (isShapeDragging && selectedShape === shape) {
+          const svgCoords1 = getSVGCoords(designerSVG, shapeDragStart.x, shapeDragStart.y);
+          const svgCoords2 = getSVGCoords(designerSVG, e.clientX, e.clientY);
+          const dx = svgCoords2.x - svgCoords1.x;
+          const dy = svgCoords2.y - svgCoords1.y;
+          shape.setAttribute('cx', (shapeDragStart.origX + dx).toString());
+          shape.setAttribute('cy', (shapeDragStart.origY + dy).toString());
+          // Move the center dot too
+          const centerDot = (shape as any)._centerDot as SVGCircleElement;
+          if (centerDot) {
+            centerDot.setAttribute('cx', (shapeDragStart.origX + dx).toString());
+            centerDot.setAttribute('cy', (shapeDragStart.origY + dy).toString());
+          }
+          if ((shape as any)._resizeHandles?.[0]) {
+            const updateHandle = (shape as any)._resizeHandles[0].__updateHandle;
+            if (updateHandle) updateHandle();
+          }
+          return;
+        }
+      });
+
       // --- INITIAL HANDLE POSITION ---
       updateHandle();
       (shape as any)._resizeHandles = [handle];
@@ -391,6 +583,25 @@
       clampDesignerPan();
     }
     designerSVG.setAttribute('viewBox', `${designerPanX} ${designerPanY} ${designerPanW} ${designerPanH}`);
+
+    // --- Keep text visually constant size ---
+    const texts = designerSVG.querySelectorAll('text');
+    texts.forEach(text => {
+      const baseFontSize = parseFloat(text.getAttribute('data-base-font-size') || '18');
+      text.setAttribute('font-size', (baseFontSize / designerZoomLevel) + 'px');
+
+      // --- Update rect for each text ---
+      const rect = text.previousElementSibling as SVGRectElement | null;
+      if (rect && rect.tagName === 'rect') {
+        const bb = text.getBBox();
+        const cx = parseFloat(text.getAttribute('x') || '0');
+        const cy = parseFloat(text.getAttribute('y') || '0');
+        rect.setAttribute('x', (cx - bb.width / 2 - 8).toString());
+        rect.setAttribute('y', (cy - bb.height / 2 - 4).toString());
+        rect.setAttribute('width', (bb.width + 16).toString());
+        rect.setAttribute('height', (bb.height + 8).toString());
+      }
+    });
   }
 
   function clampDesignerPan() {
@@ -643,49 +854,19 @@
 
     // --- 2. Group (shape) dragging ---
     if (dragTarget && roleSelect.value === 'admin') {
-      designerSVG.style.cursor = 'grab';
-      // Extract current translation and rotation (with center)
-      const transform = dragTarget.getAttribute('transform') || '';
-      const transMatch = /translate\(([^,]+),([^)]+)\)/.exec(transform);
-      const rotMatch = /rotate\(([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\)/.exec(transform);
-
-      let prevTx = 0, prevTy = 0;
-      if (transMatch) {
-        prevTx = parseFloat(transMatch[1]);
-        prevTy = parseFloat(transMatch[2]);
+      // Only handle seat group dragging (not shapes/paths)
+      const circle = dragTarget.querySelector('circle[data-seat-id]') as SVGCircleElement;
+      if (circle) {
+        // Get current mouse SVG coordinates
+        const currSVG = getSVGCoords(designerSVG, e.clientX, e.clientY);
+        // Calculate delta in SVG space
+        const dx = currSVG.x - dragStart.x;
+        const dy = currSVG.y - dragStart.y;
+        // Update seat center
+        circle.setAttribute('cx', (dragStart.tx + dx).toString());
+        circle.setAttribute('cy', (dragStart.ty + dy).toString());
       }
-
-      let angle = 0, rotCx = 0, rotCy = 0;
-      if (rotMatch) {
-        angle = parseFloat(rotMatch[1]);
-        rotCx = parseFloat(rotMatch[2]);
-        rotCy = parseFloat(rotMatch[3]);
-      }
-
-      // Calculate mouse movement in screen coords
-      const dx = e.clientX - dragStart.x;
-      const dy = e.clientY - dragStart.y;
-
-      // Project movement into the rotated coordinate system
-      let tx = dragStart.tx, ty = dragStart.ty;
-      if (angle !== 0) {
-        const rad = angle * Math.PI / 180;
-        const localDx = dx * Math.cos(-rad) - dy * Math.sin(-rad);
-        const localDy = dx * Math.sin(-rad) + dy * Math.cos(-rad);
-        tx = dragStart.tx + localDx;
-        ty = dragStart.ty + localDy;
-      } else {
-        tx = dragStart.tx + dx;
-        ty = dragStart.ty + dy;
-      }
-
-      // Rebuild transform string, preserving rotation center
-      let rotPart = '';
-      if (rotMatch) {
-        rotPart = ` rotate(${angle} ${rotCx} ${rotCy})`;
-      }
-      dragTarget.setAttribute('transform', `translate(${tx},${ty})${rotPart}`);
-
+      return;
     } else {
       designerSVG.style.cursor = 'click';
     }
@@ -1096,6 +1277,26 @@
       clampPan();
     }
     seatSVG.setAttribute('viewBox', `${panX} ${panY} ${panW} ${panH}`);
+
+    // --- Keep text visually constant size on user side ---
+    const texts = seatSVG.querySelectorAll('text');
+    texts.forEach(text => {
+      // Use data-base-font-size if available, else fallback to font-size or 18
+      let baseFontSize = parseFloat(text.getAttribute('data-base-font-size') || text.getAttribute('font-size') || '18');
+      text.setAttribute('font-size', (baseFontSize / userZoomLevel) + 'px');
+
+      // --- Update rect for each text (centered) ---
+      const rect = text.previousElementSibling as SVGRectElement | null;
+      if (rect && rect.tagName === 'rect') {
+        const bb = text.getBBox();
+        const cx = parseFloat(text.getAttribute('x') || '0');
+        const cy = parseFloat(text.getAttribute('y') || '0');
+        rect.setAttribute('x', (cx - bb.width / 2 - 8).toString());
+        rect.setAttribute('y', (cy - bb.height / 2 - 4).toString());
+        rect.setAttribute('width', (bb.width + 16).toString());
+        rect.setAttribute('height', (bb.height + 8).toString());
+      }
+    });
   }
 
   // --- Pan Logic ---
@@ -1200,12 +1401,16 @@
       seatCircles.forEach((circle, idx) => {
         const seatCircle = circle as SVGCircleElement;
         const seatId = seatCircle.getAttribute('data-seat-id') || `${idx}`;
-        if (occupiedSeats.has(seatId)) {
-          seatCircle.setAttribute('fill', '#d32f2f');
-        } else if (selectedSeats.has(seatId)) {
-          seatCircle.setAttribute('fill', '#4caf50');
-        } else if (seatCircle.getAttribute('r') && parseFloat(seatCircle.getAttribute('r') || "0") < 25) {
-          seatCircle.setAttribute('fill', '#e0e0e0');
+        if (seatCircle.hasAttribute('data-seat-id')) {
+          if (occupiedSeats.has(seatId)) {
+            seatCircle.setAttribute('fill', '#d32f2f');
+          } else if (selectedSeats.has(seatId)) {
+            seatCircle.setAttribute('fill', '#4caf50');
+          } else {
+            seatCircle.setAttribute('fill', '#e0e0e0'); // grey for available seats
+          }
+        } else {
+          seatCircle.setAttribute('fill', 'none'); // no fill for drawn circles
         }
       });
     }
@@ -1215,7 +1420,18 @@
   function saveLayout(svg: SVGSVGElement, promptMsg: string, prefix: string) {
     const layoutName = prompt(promptMsg);
     if (!layoutName) return;
+    // --- Remove background image before saving ---
+    let removedBgImage: SVGImageElement | null = null;
+    if (svg === designerSVG && bgImageEl && bgImageEl.parentNode) {
+      removedBgImage = bgImageEl;
+      bgImageEl.parentNode.removeChild(bgImageEl);
+    }
+    // Save SVG outerHTML (without background image)
     localStorage.setItem(prefix + layoutName, svg.outerHTML);
+    // Restore background image if it was removed
+    if (removedBgImage) {
+      svg.insertBefore(removedBgImage, svg.firstChild);
+    }
     updateSavedLayoutsDropdown();
     alert('Layout saved!');
   }
@@ -1397,15 +1613,15 @@
       if ((cx === 0 && cy === 0 && !seatCircle.hasAttribute('data-seat-id')) || radius === 0) {
         return;
       }
-      if (radius < 25) {
-        seatCircle.style.cursor = 'pointer';
+      if (seatCircle.hasAttribute('data-seat-id')) {
         if (!occupiedSeats.has(seatId)) {
           seatCircle.setAttribute('fill', '#e0e0e0');
         } else {
           seatCircle.setAttribute('fill', '#d32f2f');
         }
+        seatCircle.style.cursor = 'pointer';
       } else {
-        seatCircle.setAttribute('fill', '#bdbdbd');
+        seatCircle.setAttribute('fill', 'none'); // no fill for drawn circles
         seatCircle.style.cursor = 'default';
       }
     });
@@ -1532,18 +1748,26 @@
 
   let dragStart = { x: 0, y: 0, tx: 0, ty: 0 };
 
+  // Used for text interaction state in designer SVG
+  let justInteractedWithText = false;
+
   function makeDraggable(group: SVGGElement) {
     group.addEventListener('mousedown', (e: MouseEvent) => {
       justDragged = false;
       if (roleSelect.value !== 'admin') return;
       dragTarget = group;
-      const transform = group.getAttribute('transform') || '';
-      const match = /translate\(([^,]+),([^)]+)\)/.exec(transform);
+      // Find the seat circle inside the group
+      const circle = group.querySelector('circle[data-seat-id]') as SVGCircleElement;
+      // Store SVG coordinates of mouse and seat center at drag start
+      const startSVG = getSVGCoords(designerSVG, e.clientX, e.clientY);
+      const origCx = parseFloat(circle.getAttribute('cx') || '0');
+      const origCy = parseFloat(circle.getAttribute('cy') || '0');
+      // Store in dragStart for use in global handler
       dragStart = {
-        x: e.clientX,
-        y: e.clientY,
-        tx: match ? parseFloat(match[1]) : 0,
-        ty: match ? parseFloat(match[2]) : 0
+        x: startSVG.x,
+        y: startSVG.y,
+        tx: origCx,
+        ty: origCy
       };
       e.stopPropagation();
     });
@@ -1591,9 +1815,18 @@
         circle.setAttribute('stroke', '#000');
         circle.setAttribute('stroke-width', '2');
         circle.setAttribute('fill', 'none');
+        circle.setAttribute('pointer-events', 'stroke'); // Only edge is draggable
         circle.style.cursor = 'grab';
+
+        const centerDot = document.createElementNS(svgNS, 'circle');
+        centerDot.setAttribute('cx', svgCoords.x.toString());
+        centerDot.setAttribute('cy', svgCoords.y.toString());
+        centerDot.setAttribute('r', '2');
+        centerDot.setAttribute('fill', '#000');
         designerSVG.appendChild(circle);
+        designerSVG.appendChild(centerDot);
         makeShapeInteractive(circle);
+        (circle as any)._centerDot = centerDot; // Store for drag
         shapeMode = 'none';
         addCircleBtn.style.background = "";
       }
@@ -1638,6 +1871,195 @@
         justDragged = false;
         return;
       }
+
+      if (justSelectedTextBox) {
+        justSelectedTextBox = false;
+        return;
+      }
+
+      // --- Text Mode ---
+      if (textMode && e.target === designerSVG) {
+        const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+
+        // Create group for text and background
+        const textGroup = document.createElementNS(svgNS, 'g');
+
+        // Create text element
+        const text = document.createElementNS(svgNS, 'text');
+        text.setAttribute('x', svgCoords.x.toString());
+        text.setAttribute('y', svgCoords.y.toString());
+        text.setAttribute('font-size', '18');
+        text.setAttribute('data-base-font-size', '18');
+        text.setAttribute('fill', '#000');
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        text.textContent = 'Add Text';
+        text.style.cursor = '';
+
+        // Create a rect as a background/border for the text
+        const rect = document.createElementNS(svgNS, 'rect');
+        rect.setAttribute('fill', 'rgba(0,0,0,0)');
+        rect.setAttribute('stroke', 'none');
+        rect.setAttribute('stroke-width', '2');
+        rect.style.cursor = 'move';
+
+        textGroup.appendChild(rect);
+        textGroup.appendChild(text);
+        designerSVG.appendChild(textGroup);
+
+        // Update rect to fit text after rendering
+        setTimeout(() => {
+          const bb = text.getBBox();
+          rect.setAttribute('x', (bb.x - 8).toString());
+          rect.setAttribute('y', (bb.y - 4).toString());
+          rect.setAttribute('width', (bb.width + 16).toString());
+          rect.setAttribute('height', (bb.height + 8).toString());
+        });
+
+        // --- Drag and Select Logic ---
+        let isTextDragging = false;
+        let dragStart = { x: 0, y: 0, origX: 0, origY: 0 };
+        let dragTimeout: number | null = null;
+        let moved = false;
+
+        // Helper to select and show editor
+        function selectTextBox() {
+          if (selectedTextRect) {
+            selectedTextRect.setAttribute('stroke', 'none');
+            selectedTextRect.setAttribute('stroke-dasharray', '');
+          }
+          selectedTextGroup = textGroup;
+          selectedText = text;
+          selectedTextRect = rect;
+          rect.setAttribute('stroke', '#888');
+          rect.setAttribute('stroke-width', '2');
+          textEditInput.style.display = '';
+          textEditInput.value = text.textContent || '';
+          textEditInput.focus();
+          textSizeSlider.style.display = '';
+          textSizeValue.style.display = '';
+          textSizeSlider.value = text.getAttribute('data-base-font-size') || '18';
+          textSizeValue.textContent = textSizeSlider.value;
+        }
+
+        // Click-hold-move to drag, click to select
+        rect.addEventListener('mousedown', (ev) => {
+          ev.stopPropagation();
+          moved = false;
+          justSelectedTextBox = true;
+          dragTimeout = window.setTimeout(() => {
+            isTextDragging = true;
+            dragStart.x = ev.clientX;
+            dragStart.y = ev.clientY;
+            dragStart.origX = parseFloat(text.getAttribute('x') || '0');
+            dragStart.origY = parseFloat(text.getAttribute('y') || '0');
+            moved = true;
+          }, 120);
+
+          function onMove(moveEv: MouseEvent) {
+            if (isTextDragging) {
+              const svgCoords1 = getSVGCoords(designerSVG, dragStart.x, dragStart.y);
+              const svgCoords2 = getSVGCoords(designerSVG, moveEv.clientX, moveEv.clientY);
+              const dx = svgCoords2.x - svgCoords1.x;
+              const dy = svgCoords2.y - svgCoords1.y;
+              const newX = dragStart.origX + dx;
+              const newY = dragStart.origY + dy;
+              text.setAttribute('x', newX.toString());
+              text.setAttribute('y', newY.toString());
+              const bb = text.getBBox();
+              rect.setAttribute('x', (bb.x - 8).toString());
+              rect.setAttribute('y', (bb.y - 4).toString());
+              rect.setAttribute('width', (bb.width + 16).toString());
+              rect.setAttribute('height', (bb.height + 8).toString());
+            }
+          }
+
+          function onUp() {
+            if (dragTimeout) clearTimeout(dragTimeout);
+            if (!moved) selectTextBox();
+            isTextDragging = false;
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+          }
+
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        });
+
+        // Also allow clicking on the text to select
+        text.addEventListener('mousedown', (ev) => {
+          ev.stopPropagation();
+          justSelectedTextBox = true;
+          selectTextBox();
+        });
+
+        // Touch support (optional, similar logic)
+        rect.addEventListener('touchstart', (ev) => {
+          ev.stopPropagation();
+          moved = false;
+          justSelectedTextBox = true;
+          dragTimeout = window.setTimeout(() => {
+            isTextDragging = true;
+            const touch = ev.touches[0];
+            dragStart.x = touch.clientX;
+            dragStart.y = touch.clientY;
+            dragStart.origX = parseFloat(text.getAttribute('x') || '0');
+            dragStart.origY = parseFloat(text.getAttribute('y') || '0');
+            moved = true;
+          }, 120);
+
+          function onMove(moveEv: TouchEvent) {
+            if (isTextDragging) {
+              const touch = moveEv.touches[0];
+              const svgCoords1 = getSVGCoords(designerSVG, dragStart.x, dragStart.y);
+              const svgCoords2 = getSVGCoords(designerSVG, touch.clientX, touch.clientY);
+              const dx = svgCoords2.x - svgCoords1.x;
+              const dy = svgCoords2.y - svgCoords1.y;
+              const newX = dragStart.origX + dx;
+              const newY = dragStart.origY + dy;
+              text.setAttribute('x', newX.toString());
+              text.setAttribute('y', newY.toString());
+              const bb = text.getBBox();
+              rect.setAttribute('x', (bb.x - 8).toString());
+              rect.setAttribute('y', (bb.y - 4).toString());
+              rect.setAttribute('width', (bb.width + 16).toString());
+              rect.setAttribute('height', (bb.height + 8).toString());
+            }
+          }
+
+          function onUp() {
+            if (dragTimeout) clearTimeout(dragTimeout);
+            if (!moved) selectTextBox();
+            isTextDragging = false;
+            window.removeEventListener('touchmove', onMove);
+            window.removeEventListener('touchend', onUp);
+          }
+
+          window.addEventListener('touchmove', onMove, { passive: false });
+          window.addEventListener('touchend', onUp);
+        });
+
+        // Exit text mode after placing
+        textMode = false;
+        addTextBtn.style.background = "";
+      }
+
+      if (
+        !textMode &&
+        selectedTextRect &&
+        e.target !== selectedTextRect &&
+        e.target !== selectedText
+      ) {
+        selectedTextRect.setAttribute('stroke', 'none');
+        selectedTextRect.setAttribute('stroke-dasharray', '');
+        selectedTextGroup = null;
+        selectedText = null;
+        selectedTextRect = null;
+        textEditInput.style.display = 'none';
+        textSizeSlider.style.display = 'none';
+        textSizeValue.style.display = 'none';
+      }
+
       if (!addMode) {
         if (e.target === designerSVG) {
           if (selectedDesignerSeat) selectedDesignerSeat.setAttribute('stroke', '#222');
@@ -1652,7 +2074,8 @@
       const group = document.createElementNS(svgNS, 'g');
       circle.setAttribute('cx', svgCoords.x.toString());
       circle.setAttribute('cy', svgCoords.y.toString());
-      circle.setAttribute('r', '7');
+      const newSize = parseInt(allSeatSizeSlider.value, 10);
+      circle.setAttribute('r', (newSize).toString());
       circle.setAttribute('fill', '#49D44B');
       circle.setAttribute('stroke', '#222');
       circle.setAttribute('data-seat-id', getNextAvailableDesignerSeatId());
@@ -1665,8 +2088,39 @@
       designerSVG.appendChild(group);
       makeDraggable(group); // Pass the group, not the circle
       selectDesignerSeat(circle);
+
     });
   }
+
+  // --- Designer Text Editing ---
+  textEditInput.addEventListener('input', () => {
+    if (selectedText && selectedTextRect) {
+      selectedText.textContent = textEditInput.value;
+      const bb = selectedText.getBBox();
+      const cx = parseFloat(selectedText.getAttribute('x') || '0');
+      const cy = parseFloat(selectedText.getAttribute('y') || '0');
+      selectedTextRect.setAttribute('x', (cx - bb.width / 2 - 8).toString());
+      selectedTextRect.setAttribute('y', (cy - bb.height / 2 - 4).toString());
+      selectedTextRect.setAttribute('width', (bb.width + 16).toString());
+      selectedTextRect.setAttribute('height', (bb.height + 8).toString());
+    }
+  });
+
+  textSizeSlider.addEventListener('input', () => {
+    if (selectedText && selectedTextRect) {
+      const size = parseInt(textSizeSlider.value, 10);
+      selectedText.setAttribute('font-size', size.toString());
+      selectedText.setAttribute('data-base-font-size', size.toString());
+      textSizeValue.textContent = size.toString();
+      const bb = selectedText.getBBox();
+      const cx = parseFloat(selectedText.getAttribute('x') || '0');
+      const cy = parseFloat(selectedText.getAttribute('y') || '0');
+      selectedTextRect.setAttribute('x', (cx - bb.width / 2 - 8).toString());
+      selectedTextRect.setAttribute('y', (cy - bb.height / 2 - 4).toString());
+      selectedTextRect.setAttribute('width', (bb.width + 16).toString());
+      selectedTextRect.setAttribute('height', (bb.height + 8).toString());
+    }
+  });
 
   function selectDesignerSeat(circle: SVGCircleElement) {
     // Only apply stroke if this is a seat (not a pen tool anchor)

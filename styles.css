@@ -91,3 +91,9 @@ svg {
 #seatSVG circle[data-seat-id] {
   cursor: pointer;
 }
+
+svg text {
+  font-size: 18px;
+  vector-effect: non-scaling-stroke;
+  paint-order: stroke;
+}
