@@ -55,6 +55,11 @@
     const textSizeValue = document.getElementById('textSizeValue');
     const allSeatSizeSlider = document.getElementById('allSeatSizeSlider');
     const allSeatSizeValue = document.getElementById('allSeatSizeValue');
+    const shapeWidthSlider = document.getElementById('shapeWidthSlider');
+    const shapeWidthValue = document.getElementById('shapeWidthValue');
+    const shapeWidthLabel = document.getElementById('shapeWidthLabel');
+    const shapeColorInput = document.getElementById('shapeColorInput');
+    const shapeColorLabel = document.getElementById('shapeColorLabel');
     // Designer SVG pan/zoom state
     let designerOriginalViewBox = designerSVG.getAttribute('viewBox');
     if (!designerOriginalViewBox) {
@@ -94,6 +99,7 @@
     let selectedTextGroup = null;
     let selectedText = null;
     let selectedTextRect = null;
+    let selectedCirclePath = null;
     // --- Designer SVG Pan Logic ---  
     designerSVG.addEventListener('mousedown', (e) => {
         // Only pan if not clicking on a shape/handle
@@ -107,6 +113,87 @@
         isDesignerPanning = true;
         designerPanStart = { x: e.clientX, y: e.clientY };
         designerSVG.style.cursor = 'grab';
+    });
+    function showShapeColorInput(path) {
+        const color = path.getAttribute('stroke') || '#000000';
+        shapeColorInput.value = color.startsWith('#') ? color : '#000000';
+        shapeColorLabel.style.display = '';
+    }
+    function hideShapeColorInput() {
+        shapeColorLabel.style.display = 'none';
+    }
+    function showShapeWidthSlider(path) {
+        const width = path.getAttribute('data-stroke-width') || path.getAttribute('stroke-width') || '2';
+        shapeWidthSlider.value = width;
+        shapeWidthValue.textContent = width;
+        shapeWidthLabel.style.display = '';
+    }
+    function hideShapeWidthSlider() {
+        shapeWidthLabel.style.display = 'none';
+    }
+    function selectCirclePath(path) {
+        if (selectedCirclePath && selectedCirclePath !== path) {
+            const prev = selectedCirclePath.getAttribute('data-prev-stroke') || '#000';
+            selectedCirclePath.setAttribute('stroke', prev);
+        }
+        path.setAttribute('data-prev-stroke', path.getAttribute('stroke') || '#000');
+        selectedCirclePath = path;
+        path.setAttribute('stroke', '#f44336');
+        showShapeWidthSlider(path);
+        showShapeColorInput(path);
+    }
+    shapeColorInput.addEventListener('input', () => {
+        let path = null;
+        if (selectedPenPath)
+            path = selectedPenPath.path;
+        else if (selectedRectPath)
+            path = selectedRectPath;
+        else if (selectedCirclePath)
+            path = selectedCirclePath;
+        const color = shapeColorInput.value;
+        if (path) {
+            path.setAttribute('data-prev-stroke', color); // Store for deselect
+        }
+    });
+    shapeWidthSlider.addEventListener('input', () => {
+        let path = null;
+        let strokeWidth = parseInt(shapeWidthSlider.value, 10);
+        if (selectedPenPath)
+            path = selectedPenPath.path;
+        else if (selectedRectPath)
+            path = selectedRectPath;
+        else if (selectedCirclePath)
+            path = selectedCirclePath;
+        if (path) {
+            path.setAttribute('stroke-width', shapeWidthSlider.value);
+            path.setAttribute('data-stroke-width', shapeWidthSlider.value);
+            shapeWidthValue.textContent = shapeWidthSlider.value;
+            //  Update handle sizes for rect/circle 
+            if (selectedRectPath && selectedRectPath._resizeHandle) {
+                const handle = selectedRectPath._resizeHandle;
+                const newR = Math.max(3, Math.round(strokeWidth));
+                handle.setAttribute('r', newR.toString());
+            }
+            if (selectedCirclePath) {
+                // Find the resize handle 
+                const handles = Array.from(designerSVG.querySelectorAll('circle'));
+                handles.forEach(handle => {
+                    if (handle.style.cursor === 'ew-resize') {
+                        const newR = Math.max(3, Math.round(strokeWidth));
+                        handle.setAttribute('r', newR.toString());
+                    }
+                });
+            }
+            //  Update anchor handles for pen path 
+            if (selectedPenPath) {
+                for (const pt of selectedPenPath.points) {
+                    if (pt.anchorCircle) {
+                        const newR = Math.max(3, Math.round(strokeWidth));
+                        pt.anchorCircle.setAttribute('r', newR.toString());
+                    }
+                }
+            }
+        }
     });
     allSeatSizeSlider.addEventListener('input', () => {
         const newSize = parseInt(allSeatSizeSlider.value, 10);
@@ -353,6 +440,7 @@
             pt.y = cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
         }
         updateRectPath(selectedRectPath, points);
+        selectedRectPath.setAttribute('stroke', '#f44336'); // keep red 
     }
     // Attach to your rotate buttons:
     rotateLeftBtn.addEventListener('click', () => {
@@ -365,10 +453,16 @@
     });
     function selectRectPath(path) {
         if (selectedRectPath && selectedRectPath !== path) {
-            selectedRectPath.setAttribute('stroke', '#000');
+            // Restore previous color on deselect
+            const prev = selectedRectPath.getAttribute('data-prev-stroke') || '#000';
+            selectedRectPath.setAttribute('stroke', prev);
         }
+        // Store current color before highlighting
+        path.setAttribute('data-prev-stroke', path.getAttribute('stroke') || '#000');
         selectedRectPath = path;
         path.setAttribute('stroke', '#f44336');
+        showShapeWidthSlider(path);
+        showShapeColorInput(path);
     }
     function makeRectPathInteractive(path) {
         // Select on click
@@ -376,6 +470,8 @@
             e.stopPropagation();
             selectRectPath(path);
         });
+        showShapeWidthSlider(path);
+        showShapeColorInput(path);
         // Drag on mousedown
         path.addEventListener('mousedown', (e) => {
             if (roleSelect.value !== 'admin')
@@ -417,94 +513,6 @@
         // Update handle if present
         if (path._resizeHandle) {
             path._resizeHandle._updateHandle();
-        }
-    }
-    // Shape resizing 
-    function makeShapeInteractive(shape) {
-        // Remove old handles if any
-        if (shape._resizeHandles) {
-            shape._resizeHandles.forEach((h) => h.remove());
-        }
-        // --- CIRCLE LOGIC ---
-        if (shape instanceof SVGCircleElement) {
-            // Circle: 1 handle on right edge
-            const handle = document.createElementNS(svgNS, 'circle');
-            handle.setAttribute('r', '3');
-            handle.setAttribute('fill', '#000');
-            handle.style.cursor = 'ew-resize';
-            handle.style.pointerEvents = 'all';
-            designerSVG.appendChild(handle);
-            const updateHandle = () => {
-                const cx = parseFloat(shape.getAttribute('cx') || '0');
-                const cy = parseFloat(shape.getAttribute('cy') || '0');
-                const r = parseFloat(shape.getAttribute('r') || '0');
-                handle.setAttribute('cx', (cx + r).toString());
-                handle.setAttribute('cy', cy.toString());
-                designerSVG.appendChild(handle);
-            };
-            handle.__updateHandle = updateHandle;
-            let isResizing = false;
-            let start = { x: 0, r: 0 };
-            handle.addEventListener('mousedown', (e) => {
-                e.stopPropagation();
-                isResizing = true;
-                start.x = e.clientX;
-                start.r = parseFloat(shape.getAttribute('r') || '0');
-                function onMove(ev) {
-                    if (!isResizing)
-                        return;
-                    const dx = ev.clientX - start.x;
-                    let newR = Math.max(5, start.r + dx);
-                    shape.setAttribute('r', newR.toString());
-                    updateHandle();
-                }
-                function onUp() {
-                    isResizing = false;
-                    window.removeEventListener('mousemove', onMove);
-                    window.removeEventListener('mouseup', onUp);
-                }
-                window.addEventListener('mousemove', onMove);
-                window.addEventListener('mouseup', onUp);
-            }); // save
-            // --- DRAG LOGIC ---
-            shape.addEventListener('mousedown', (e) => {
-                if (e.shiftKey)
-                    return; // Don't drag if resizing
-                isShapeDragging = true;
-                shapeDragStart.x = e.clientX;
-                shapeDragStart.y = e.clientY;
-                shapeDragStart.origX = parseFloat(shape.getAttribute('cx') || '0');
-                shapeDragStart.origY = parseFloat(shape.getAttribute('cy') || '0');
-                selectedShape = shape;
-                e.stopPropagation();
-            });
-            //  Drag centre dot
-            window.addEventListener('mousemove', (e) => {
-                var _a;
-                if (isShapeDragging && selectedShape === shape) {
-                    const svgCoords1 = getSVGCoords(designerSVG, shapeDragStart.x, shapeDragStart.y);
-                    const svgCoords2 = getSVGCoords(designerSVG, e.clientX, e.clientY);
-                    const dx = svgCoords2.x - svgCoords1.x;
-                    const dy = svgCoords2.y - svgCoords1.y;
-                    shape.setAttribute('cx', (shapeDragStart.origX + dx).toString());
-                    shape.setAttribute('cy', (shapeDragStart.origY + dy).toString());
-                    // Move the center dot too
-                    const centerDot = shape._centerDot;
-                    if (centerDot) {
-                        centerDot.setAttribute('cx', (shapeDragStart.origX + dx).toString());
-                        centerDot.setAttribute('cy', (shapeDragStart.origY + dy).toString());
-                    }
-                    if ((_a = shape._resizeHandles) === null || _a === void 0 ? void 0 : _a[0]) {
-                        const updateHandle = shape._resizeHandles[0].__updateHandle;
-                        if (updateHandle)
-                            updateHandle();
-                    }
-                    return;
-                }
-            });
-            // --- INITIAL HANDLE POSITION ---
-            updateHandle();
-            shape._resizeHandles = [handle];
         }
     }
     // --- Designer SVG Zoom/Pan Logic ---
@@ -668,14 +676,17 @@
         if (!penMode && selectedPenPath) {
             for (const pt of selectedPenPath.points) {
                 if (e.target === pt.anchorCircle) {
+                    selectPenPath(selectedPenPath);
                     penDragging = { point: pt, type: 'anchor', offsetX: svgCoords.x - pt.x, offsetY: svgCoords.y - pt.y };
                     return;
                 }
                 if (e.target === pt.handleInCircle) {
+                    selectPenPath(selectedPenPath);
                     penDragging = { point: pt, type: 'handleIn', offsetX: svgCoords.x - ((_k = (_j = pt.handleIn) === null || _j === void 0 ? void 0 : _j.x) !== null && _k !== void 0 ? _k : pt.x), offsetY: svgCoords.y - ((_m = (_l = pt.handleIn) === null || _l === void 0 ? void 0 : _l.y) !== null && _m !== void 0 ? _m : pt.y) };
                     return;
                 }
                 if (e.target === pt.handleOutCircle) {
+                    selectPenPath(selectedPenPath);
                     penDragging = { point: pt, type: 'handleOut', offsetX: svgCoords.x - ((_p = (_o = pt.handleOut) === null || _o === void 0 ? void 0 : _o.x) !== null && _p !== void 0 ? _p : pt.x), offsetY: svgCoords.y - ((_r = (_q = pt.handleOut) === null || _q === void 0 ? void 0 : _q.y) !== null && _r !== void 0 ? _r : pt.y) };
                     return;
                 }
@@ -699,10 +710,14 @@
         }
     });
     window.addEventListener('mousemove', (e) => {
-        var _a, _b, _c, _d, _e, _f, _g;
+        var _a, _b, _c, _d, _e, _f;
         // --- 1. Pen Tool anchor/handle dragging ---
         if (penDragging && (currentPenPath || selectedPenPath)) {
             const pathObj = currentPenPath || selectedPenPath;
+            // --- Ensure selectedPenPath is set for finished paths ---
+            if (!penMode && pathObj && selectedPenPath !== pathObj) {
+                selectedPenPath = pathObj;
+            }
             const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
             const pt = penDragging.point;
             if (penDragging.type === 'anchor') {
@@ -881,24 +896,6 @@
             updatePenPath(selectedPenPath, false);
             return;
         }
-        // --- 7. Shape dragging/resizing ---
-        if (isShapeDragging && selectedShape) {
-            if (selectedShape instanceof SVGCircleElement) {
-                // For circles, just move cx/cy as before (no rotation needed)
-                const svgCoords1 = getSVGCoords(designerSVG, shapeDragStart.x, shapeDragStart.y);
-                const svgCoords2 = getSVGCoords(designerSVG, e.clientX, e.clientY);
-                const dx = svgCoords2.x - svgCoords1.x;
-                const dy = svgCoords2.y - svgCoords1.y;
-                selectedShape.setAttribute('cx', (shapeDragStart.origX + dx).toString());
-                selectedShape.setAttribute('cy', (shapeDragStart.origY + dy).toString());
-                if ((_g = selectedShape._resizeHandles) === null || _g === void 0 ? void 0 : _g[0]) {
-                    const updateHandle = selectedShape._resizeHandles[0].__updateHandle;
-                    if (updateHandle)
-                        updateHandle();
-                }
-                return;
-            }
-        }
     });
     // --- Pen Tool Mouse Up (End Drag) ---
     let isResizing = false;
@@ -913,6 +910,11 @@
         designerSVG.style.cursor = '';
         isPanning = false;
         seatSVG.style.cursor = '';
+        // Restore rect path color after drag if not selected
+        if (!isRectPathDragging && selectedRectPath) {
+            const prev = selectedRectPath.getAttribute('data-prev-stroke') || '#000';
+            selectedRectPath.setAttribute('stroke', prev);
+        }
         // HandleOut if it was a click, not a drag
         if (penDragging && penDragging.type === 'handleOut' && penDragging.point._dragStart) {
             const pt = penDragging.point;
@@ -999,12 +1001,11 @@
     function selectPenPath(path) {
         // Deselect previous
         if (selectedPenPath && selectedPenPath !== path) {
-            updatePenPath(selectedPenPath, true); // Hide handles
-            selectedPenPath.path.setAttribute('stroke', '#000');
+            updatePenPath(selectedPenPath, true);
         }
+        // do not update data-prev-stroke here
         selectedPenPath = path;
         updatePenPath(path, false); // Show handles
-        path.path.setAttribute('stroke', '#f44336');
         // Dragging logic
         path.path.onmousedown = (e) => {
             if (!selectedPenPath)
@@ -1013,6 +1014,8 @@
             pathDragStart = { x: e.clientX, y: e.clientY };
             e.stopPropagation();
         };
+        showShapeWidthSlider(path.path);
+        showShapeColorInput(path.path);
     }
     // --- Update Path & Handles ---
     function updatePenPath(pathObj, hideHandles = false) {
@@ -1108,6 +1111,14 @@
             d += ` C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${first.x} ${first.y} Z`;
         }
         pathObj.path.setAttribute('d', d);
+        // Pen path color logic: always red when selected and handles are visible, otherwise user color
+        if (selectedPenPath && pathObj === selectedPenPath && !hideHandles) {
+            pathObj.path.setAttribute('stroke', '#f44336');
+        }
+        else {
+            const prev = pathObj.path.getAttribute('data-prev-stroke') || '#000';
+            pathObj.path.setAttribute('stroke', prev);
+        }
     }
     // Rotate selected path around its center
     function rotateSelectedPath(angleDeg) {
@@ -1679,34 +1690,132 @@
             // --- Deselect on SVG background click ---
             if (!penMode && e.target === designerSVG && selectedPenPath) {
                 updatePenPath(selectedPenPath, true);
-                selectedPenPath.path.setAttribute('stroke', '#000');
                 selectedPenPath = null;
+                hideShapeWidthSlider();
+                hideShapeColorInput();
             }
             if (e.target === designerSVG && selectedRectPath) {
-                selectedRectPath.setAttribute('stroke', '#000');
+                const prev = selectedRectPath.getAttribute('data-prev-stroke') || '#000';
+                selectedRectPath.setAttribute('stroke', prev);
                 selectedRectPath = null;
+                hideShapeWidthSlider();
+                hideShapeColorInput();
+            }
+            if (e.target === designerSVG && selectedCirclePath) {
+                const prev = selectedCirclePath.getAttribute('data-prev-stroke') || '#000';
+                selectedCirclePath.setAttribute('stroke', prev);
+                selectedCirclePath = null;
+                hideShapeWidthSlider();
+                hideShapeColorInput();
+            }
+            if (addMode && e.target === designerSVG) {
+                // Add a new seat at the clicked position
+                const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
+                const seatId = getNextAvailableDesignerSeatId();
+                const seatSize = parseInt(allSeatSizeSlider.value, 10);
+                // Create a group for the seat
+                const group = document.createElementNS(svgNS, 'g');
+                // Create the seat circle
+                const circle = document.createElementNS(svgNS, 'circle');
+                circle.setAttribute('cx', svgCoords.x.toString());
+                circle.setAttribute('cy', svgCoords.y.toString());
+                circle.setAttribute('r', seatSize.toString());
+                circle.setAttribute('fill', '#49D44B');
+                circle.setAttribute('stroke', '#222');
+                circle.setAttribute('data-seat-id', seatId);
+                circle.style.cursor = 'pointer';
+                group.appendChild(circle);
+                designerSVG.appendChild(group);
+                makeDraggable(group);
+                selectDesignerSeat(circle);
             }
             // --- Handle shape drawing ---
             if (shapeMode === 'circle' && e.target === designerSVG) {
                 const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
-                const circle = document.createElementNS(svgNS, 'circle');
-                circle.setAttribute('cx', svgCoords.x.toString());
-                circle.setAttribute('cy', svgCoords.y.toString());
-                circle.setAttribute('r', '40');
-                circle.setAttribute('stroke', '#000');
-                circle.setAttribute('stroke-width', '2');
-                circle.setAttribute('fill', 'none');
-                circle.setAttribute('pointer-events', 'stroke'); // Only edge is draggable
-                circle.style.cursor = 'grab';
+                let cx = svgCoords.x;
+                let cy = svgCoords.y;
+                let rx = 40;
+                let ry = 40;
+                // Create circle as a path
+                const circlePath = document.createElementNS(svgNS, 'path');
+                circlePath.setAttribute('stroke', '#000');
+                circlePath.setAttribute('stroke-width', '2');
+                circlePath.setAttribute('fill', 'none');
+                circlePath.style.cursor = 'pointer';
+                // Helper to update path "d" for circle
+                function updateCirclePath() {
+                    const d = `
+            M ${cx - rx},${cy}
+            a ${rx},${ry} 0 1,0 ${2 * rx},0
+            a ${rx},${ry} 0 1,0 ${-2 * rx},0
+          `;
+                    circlePath.setAttribute('d', d);
+                }
+                updateCirclePath();
+                designerSVG.appendChild(circlePath);
+                circlePath.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    selectCirclePath(circlePath);
+                });
+                //  Center dot
                 const centerDot = document.createElementNS(svgNS, 'circle');
-                centerDot.setAttribute('cx', svgCoords.x.toString());
-                centerDot.setAttribute('cy', svgCoords.y.toString());
+                centerDot.setAttribute('cx', cx.toString());
+                centerDot.setAttribute('cy', cy.toString());
                 centerDot.setAttribute('r', '2');
                 centerDot.setAttribute('fill', '#000');
-                designerSVG.appendChild(circle);
+                centerDot.style.cursor = 'move';
                 designerSVG.appendChild(centerDot);
-                makeShapeInteractive(circle);
-                circle._centerDot = centerDot; // Store for drag
+                //  Drag logic (center dot) 
+                centerDot.addEventListener('mousedown', (e) => {
+                    let dragStart = getSVGCoords(designerSVG, e.clientX, e.clientY);
+                    let origCx = cx, origCy = cy;
+                    e.stopPropagation();
+                    function onMove(ev) {
+                        const curr = getSVGCoords(designerSVG, ev.clientX, ev.clientY);
+                        cx = origCx + (curr.x - dragStart.x);
+                        cy = origCy + (curr.y - dragStart.y);
+                        centerDot.setAttribute('cx', cx.toString());
+                        centerDot.setAttribute('cy', cy.toString());
+                        updateCirclePath();
+                        updateHandle();
+                    }
+                    function onUp() {
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onUp);
+                    }
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                });
+                // --- Resize logic (handle on right edge, always keeps a circle) ---
+                const handle = document.createElementNS(svgNS, 'circle');
+                handle.setAttribute('r', '3');
+                handle.setAttribute('fill', '#000');
+                handle.style.cursor = 'ew-resize';
+                designerSVG.appendChild(handle);
+                function updateHandle() {
+                    handle.setAttribute('cx', (cx + rx).toString());
+                    handle.setAttribute('cy', cy.toString());
+                }
+                updateHandle();
+                handle.addEventListener('mousedown', (e) => {
+                    let resizeStart = e.clientX;
+                    let origR = rx; // Always keep rx == ry
+                    e.stopPropagation();
+                    function onMove(ev) {
+                        const dx = ev.clientX - resizeStart;
+                        const newR = Math.max(10, origR + dx);
+                        rx = newR;
+                        ry = newR; // Keep it a circle
+                        updateCirclePath();
+                        updateHandle();
+                    }
+                    function onUp() {
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onUp);
+                    }
+                    window.addEventListener('mousemove', onMove);
+                    window.addEventListener('mouseup', onUp);
+                });
                 shapeMode = 'none';
                 addCircleBtn.style.background = "";
             }
@@ -1923,27 +2032,6 @@
                 }
                 return;
             }
-            if (e.target !== designerSVG)
-                return;
-            const svgCoords = getSVGCoords(designerSVG, e.clientX, e.clientY);
-            const circle = document.createElementNS(svgNS, 'circle');
-            const group = document.createElementNS(svgNS, 'g');
-            circle.setAttribute('cx', svgCoords.x.toString());
-            circle.setAttribute('cy', svgCoords.y.toString());
-            const newSize = parseInt(allSeatSizeSlider.value, 10);
-            circle.setAttribute('r', (newSize).toString());
-            circle.setAttribute('fill', '#49D44B');
-            circle.setAttribute('stroke', '#222');
-            circle.setAttribute('data-seat-id', getNextAvailableDesignerSeatId());
-            circle.style.cursor = 'pointer';
-            circle.setAttribute('pointer-events', 'all');
-            circle.addEventListener('click', (evt) => {
-                selectDesignerSeat(circle);
-            });
-            group.appendChild(circle);
-            designerSVG.appendChild(group);
-            makeDraggable(group); // Pass the group, not the circle
-            selectDesignerSeat(circle);
         });
     }
     // --- Designer Text Editing ---

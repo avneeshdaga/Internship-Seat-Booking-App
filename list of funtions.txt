@@ -36,4 +36,7 @@ add image behind svg for tracing layout : keep a state for image showing or not 
 fix resizing rect  after rotating(make the anchor point for resiszing one) - done
 change image size to fit svg , add a text size slider and seat size slider - done
 after zooming ,seat dragging should be same so, use seat centre - done 
-path selection and slider for changing width - 
+path selection and slider for changing width - done 
+
+path and text colour selection : stroke colour (input of colour or some other way) - 
+models in seats adding : 

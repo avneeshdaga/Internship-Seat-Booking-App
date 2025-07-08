@@ -61,6 +61,15 @@
       <button id="rotateLeftBtn" type="button">Rotate Left</button>
       <button id="rotateRightBtn" type="button">Rotate Right</button>
       <button id="drawCurveBtn">Draw Tool</button>
+      <label id="shapeWidthLabel" style="display:none;">
+        Stroke Width:
+        <input type="range" id="shapeWidthSlider" min="1" max="10" value="2" />
+        <span id="shapeWidthValue">2</span>
+      </label> <br>
+      <label id="shapeColorLabel" style="display:none;">
+        Stroke Color:
+        <input type="color" id="shapeColorInput" value="#000000" maxlength="7" style="width:80px;" />
+      </label>
       <button id="deleteCurveBtn">Delete Path</button>
       <button id="addSeatBtn">Add Seat</button>
       <button id="deleteSeatBtn">Delete Selected Seat</button>
