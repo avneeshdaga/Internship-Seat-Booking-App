@@ -1,0 +1,42 @@
+Project Goal
+A basic front-end interface where users can:
+See a grid of available seats.
+Click to select or deselect seats.
+View the total price and selected seat numbers.
+See occupied seats (disabled).
+confirm booking (just shows an alert or message).
+
+functions needed:
+1. generateseats
+2. toggleseats
+3. checkseatavailability
+4. updateUI
+5. trackselectedseats
+6. confirmbooking 
+
+dont use class, create seats - svg , canvas  
+seat should have id using attribute 
+
+check how many seats and ask user how many they want- tell them if available or not 
+if want two and two seats are available together, select both with one click.
+convert js to ts 
+
+- click and drag
+- snap to grid
+- boundaries or multi select 
+- duplicate and selct and duplicate.
+
+seats make circle not rect - done 
+user side zoom - done
+roatate path/shape by 90 deg - done
+add shapes(rect,circle) : able to resize - done [give dot at circle centre just for aligning it should move with centre as its changed or dragged]
+drag path - done
+text on svg : should work with zoom as well : without scaling - done
+add image behind svg for tracing layout : keep a state for image showing or not showing kinda like layers (will be last layer) - done 
+fix resizing rect  after rotating(make the anchor point for resiszing one) - done
+change image size to fit svg , add a text size slider and seat size slider - done
+after zooming ,seat dragging should be same so, use seat centre - done 
+path selection and slider for changing width - done 
+
+path and text colour selection : stroke colour (input of colour or some other way) - 
+models in seats adding : 

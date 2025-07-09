@@ -1,0 +1,287 @@
+body {
+  font-family: 'Times New Roman', Times, serif;
+  background-color: #f8f9fa;
+  padding: 20px;
+  text-align: center;
+  color: #333;
+  margin: 0;
+}
+
+h1, h2, h3 {
+  margin-bottom: 10px;
+  color: #2c3e50;
+}
+
+.app-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+/* Form Elements */
+input, select, button {
+  padding: 8px 12px;
+  margin: 4px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+button {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+button:hover {
+  background-color: #2980b9;
+}
+
+button:disabled {
+  background-color: #bdc3c7;
+  cursor: not-allowed;
+}
+
+button.active {
+  background-color: #4caf50;
+}
+
+/* Layout Panels */
+.panel {
+  margin: 20px 0;
+  padding: 20px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background-color: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.admin-panel {
+  background-color: #ecf0f1;
+  border-color: #bdc3c7;
+}
+
+.user-panel {
+  background-color: #e8f5e8;
+  border-color: #a5d6a7;
+}
+
+/* Fieldsets */
+fieldset {
+  margin: 15px 0;
+  padding: 15px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background-color: #fafafa;
+}
+
+legend {
+  padding: 0 10px;
+  font-weight: bold;
+  color: #2c3e50;
+}
+
+/* SVG Containers */
+.svg-container {
+  width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #fff;
+}
+
+.svg-container svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* Designer specific styles */
+.designer-svg {
+  border: 1px solid #888;
+  background: #f8f8f8;
+  margin-top: 10px;
+}
+
+/* Seat styles */
+.seat-available {
+  fill: #e0e0e0;
+  stroke: #444;
+  cursor: pointer;
+}
+
+.seat-selected {
+  fill: #4caf50;
+  stroke: #2e7d32;
+}
+
+.seat-occupied {
+  fill: #d32f2f;
+  stroke: #c62828;
+  cursor: not-allowed;
+}
+
+.seat-designer {
+  fill: #49D44B;
+  stroke: #222;
+  cursor: pointer;
+}
+
+.seat-designer.selected {
+  stroke: #f00;
+  stroke-width: 2;
+}
+
+/* Pen tool styles */
+.pen-anchor {
+  fill: rgba(0,0,0,0);
+  stroke: none;
+  cursor: pointer;
+  pointer-events: all;
+}
+
+.pen-anchor-dot {
+  fill: rgb(0,0,0);
+  pointer-events: none;
+}
+
+.pen-handle {
+  fill: #ff9800;
+  cursor: pointer;
+}
+
+.pen-handle-line {
+  stroke: #bbb;
+  stroke-dasharray: 2,2;
+}
+
+.pen-path {
+  fill: none;
+  stroke: #000;
+  stroke-width: 2;
+  cursor: pointer;
+}
+
+.pen-path.selected {
+  stroke: #f44336;
+}
+
+.pen-preview-line {
+  stroke: #2196f3;
+  stroke-dasharray: 4,2;
+}
+
+/* Shape styles */
+.shape-selected {
+  stroke: #f44336 !important;
+}
+
+.resize-handle {
+  fill: #000;
+  cursor: ew-resize;
+  pointer-events: all;
+}
+
+/* Slider Controls */
+.slider-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.slider-container input[type="range"] {
+  flex: 1;
+  margin: 0;
+}
+
+.slider-container label {
+  min-width: 120px;
+  text-align: left;
+  font-weight: 500;
+}
+
+/* Color Picker */
+input[type="color"] {
+  width: 50px;
+  height: 30px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+/* Text styles */
+.designer-text {
+  font-size: 18px;
+  vector-effect: non-scaling-stroke;
+  paint-order: stroke;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+.text-background {
+  fill: rgba(0,0,0,0);
+  stroke: none;
+}
+
+.text-background.selected {
+  stroke: #2196f3;
+  stroke-dasharray: 3,3;
+}
+
+/* Grid background */
+.grid-pattern {
+  fill: url(#grid);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .app-container {
+    padding: 10px;
+  }
+  
+  .panel {
+    padding: 15px;
+  }
+  
+  .slider-container {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .slider-container label {
+    min-width: auto;
+  }
+  
+  fieldset {
+    padding: 10px;
+  }
+  
+  input, select, button {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+}
+
+/* Utility classes */
+.hidden {
+  display: none !important;
+}
+
+.cursor-grab {
+  cursor: grab;
+}
+
+.cursor-grabbing {
+  cursor: grabbing;
+}
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.cursor-not-allowed {
+  cursor: not-allowed;
+}

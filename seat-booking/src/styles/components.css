@@ -1,0 +1,216 @@
+/* Component-specific styles */
+
+/* Seat Grid Component */
+.seat-grid {
+  width: 100%;
+  height: 400px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  overflow: hidden;
+  background-color: #fff;
+}
+
+.seat-grid svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Designer Canvas Component */
+.designer-canvas {
+  width: 100%;
+  height: 600px;
+  border: 1px solid #888;
+  background: #f8f8f8;
+  position: relative;
+}
+
+.designer-canvas svg {
+  width: 100%;
+  height: 100%;
+}
+
+/* Tool Panel Component */
+.tool-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 10px 0;
+  padding: 15px;
+  background-color: #f9f9f9;
+  border-radius: 8px;
+}
+
+.tool-button {
+  min-width: 100px;
+}
+
+.tool-button.active {
+  background-color: #4caf50;
+}
+
+/* Booking Panel Component */
+.booking-panel {
+  background-color: #e8f5e8;
+  border: 1px solid #a5d6a7;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+}
+
+.booking-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 15px 0;
+  padding: 10px;
+  background-color: rgba(255,255,255,0.8);
+  border-radius: 4px;
+}
+
+.selected-seats {
+  font-weight: bold;
+  color: #2e7d32;
+}
+
+.total-price {
+  font-size: 1.2em;
+  font-weight: bold;
+  color: #1976d2;
+}
+
+/* Control Sliders Component */
+.control-sliders {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin: 20px 0;
+}
+
+.slider-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.slider-group label {
+  min-width: 120px;
+  font-weight: 500;
+}
+
+.slider-group input[type="range"] {
+  flex: 1;
+}
+
+.slider-value {
+  min-width: 40px;
+  text-align: center;
+  font-weight: bold;
+}
+
+/* Layout Manager Component */
+.layout-manager {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  margin: 20px 0;
+}
+
+.layout-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 15px 0;
+}
+
+.layout-dropdown {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Zoom Controls Component */
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.zoom-level {
+  min-width: 60px;
+  text-align: center;
+  font-weight: bold;
+}
+
+/* Color Picker Component */
+.color-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.color-preview {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+/* Modal Component */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  min-width: 300px;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  color: #666;
+}
+
+/* Animation classes */
+.fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.slide-in {
+  animation: slideIn 0.3s ease-in-out;
+}
+
+@keyframes slideIn {
+  from { transform: translateY(-20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}

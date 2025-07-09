@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Seat Booking</title>
+  <style>
+    body {
+      font-family: 'Times New Roman', Times, serif;
+      padding: 10px;
+      text-align: center;
+    }
+
+    svg {
+      border: 1px solid #ccc;
+      max-width: 100%;
+      height: auto;
+    }
+
+    button {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <h1>Seat Booking</h1>
+
+  <!-- Admin/User Role Switch -->
+  <select id="roleSelect">
+    <option value="admin">Admin</option>
+    <option value="user">User</option>
+  </select>
+
+  <!-- Admin Panel: Both Grid and Designer Controls -->
+  <div id="adminPanel">
+    <h2>Admin Panel</h2>
+
+    <!-- Layout Management Section -->
+    <fieldset>
+      <legend>Layout Management</legend>
+      <input id="svgUpload" type="file" accept=".svg">
+      <button id="saveUploadedLayoutBtn" type="button">Save Uploaded Layout</button>
+      <select id="savedLayoutsDropdown"></select>
+      <button id="loadLayoutBtn">Load Selected Layout</button>
+      <button id="deleteLayoutBtn">Delete Selected Layout</button>
+    </fieldset>
+
+    <!-- Visual Designer Section -->
+    <fieldset style="margin-bottom: 1em;">
+      <legend>Design Layouts</legend>
+      <input type="file" id="importBgImage" accept="image/*">
+      <button id="toggleBgImageBtn">Show/Hide Background</button>
+      <button id="addTextBtn" type="button">Add Text</button>
+      <input id="textEditInput" type="text" placeholder="Edit text..." style="display:none; margin-right:8px;">
+      <input id="textSizeSlider" type="range" min="4" max="64" value="18" style="display:none;">
+      <span id="textSizeValue" style="display:none;">18</span>
+      <label id="textColorLabel" style="display:none; margin-right:12px;">
+        Text Color:
+        <input type="color" id="textColorInput" value="#000000">
+      </label>
+      <button id="addRectBtn" type="button">Add Rectangle</button>
+      <button id="addCircleBtn" type="button">Add Circle</button>
+      <button id="rotateLeftBtn" type="button">Rotate Left</button>
+      <button id="rotateRightBtn" type="button">Rotate Right</button>
+      <button id="drawCurveBtn">Draw Tool</button>
+      <label id="shapeWidthLabel" style="display:none;">
+        Stroke Width:
+        <input type="range" id="shapeWidthSlider" min="1" max="10" value="2" />
+        <span id="shapeWidthValue">2</span>
+      </label> <br>
+      <label id="shapeColorLabel" style="display:none;">
+        Stroke Color:
+        <input type="color" id="shapeColorInput" value="#000000" maxlength="7" style="width:80px;" />
+      </label>
+      <button id="deleteCurveBtn">Delete Path</button>
+      <button id="addSeatBtn">Add Seat</button>
+      <button id="deleteSeatBtn">Delete Selected Seat</button>
+      <label for="allSeatSizeSlider">Seat Size:</label>
+      <input id="allSeatSizeSlider" type="range" min="2" max="30" value="7" style="vertical-align:middle;">
+      <span id="allSeatSizeValue">7</span> <br>
+      <label>Seat ID: <input id="seatIdInput" type="text"></label>
+      <button id="updateSeatIdBtn">Update Seat ID</button> <br>
+      <svg id="designerSVG" width="1000" height="500"
+        style="border:1px solid #888; background:#f8f8f8; margin-top:10px;"></svg>
+      <button id="designerZoomResetBtn">Reset Designer Zoom</button>
+      <button id="saveDesignerLayoutBtn" type="button">Save Designer Layout</button>
+    </fieldset>
+
+    <!-- Grid Layout Section -->
+    <fieldset style="margin-bottom: 1em;">
+      <legend>Grid Layout</legend>
+      <label>Rows: <input id="rowInput" type="number" min="1" value="5"></label>
+      <label>Columns: <input id="colInput" type="number" min="1" value="8"></label>
+      <label>Seat Size: <input id="seatSizeInput" type="number" min="10" value="30"></label>
+      <button id="createSeatsBtn">Create Grid</button>
+      <button id="saveLayoutBtn">Save Current Grid Layout</button>
+    </fieldset>
+  </div>
+
+  <!-- User Panel (hidden when admin is active) -->
+  <div id="userPanel" style="display:none;">
+    <h2>User Panel</h2>
+    <!-- SVG Preview for Grid/Uploaded Layouts -->
+    <h3>Current Layout</h3>
+    <button id="zoomResetBtn" type="button">Zoom Reset</button>
+    <svg id="seatSVG" width="1000" height="500" style="border:1px solid #888; background:#f8f8f8;"></svg>
+    <p id="selected">Selected Seats: None</p>
+    <p id="total">Total: ₹0</p>
+    <button id="confirmBtn">Confirm Booking</button>
+    <!-- The seatSVG is reused for user selection -->
+  </div>
+
+  <script src="dist/script.js" defer></script>
+</body>
+
+</html>
