@@ -1,0 +1,21 @@
+src/
+├── components/
+│   ├── AppLayout.tsx
+│   ├── Sidebar.tsx
+│   ├── MainContent.tsx
+│   ├── DesignerCanvas.tsx
+│   ├── UserCanvas.tsx
+│   └── shared/
+│       ├── SVGSeat.tsx
+│       └── ZoomControls.tsx
+├── hooks/
+│   ├── useSeatStore.ts
+│   └── useSVGUtils.ts
+├── types/
+│   └── index.ts
+├── utils/
+│   └── svgHelpers.ts
+├── styles/
+│   └── globals.css
+├── App.tsx
+└── index.tsx

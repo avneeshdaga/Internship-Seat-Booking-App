@@ -69,6 +69,8 @@
   const shapeWidthLabel = document.getElementById('shapeWidthLabel') as HTMLLabelElement;
   const shapeColorInput = document.getElementById('shapeColorInput') as HTMLInputElement;
   const shapeColorLabel = document.getElementById('shapeColorLabel') as HTMLLabelElement;
+  const textColorInput = document.getElementById('textColorInput') as HTMLInputElement;
+  const textColorLabel = document.getElementById('textColorLabel') as HTMLLabelElement;
 
   // Designer SVG pan/zoom state
   let designerOriginalViewBox = designerSVG.getAttribute('viewBox');
@@ -101,9 +103,7 @@
   let pathDragStart = { x: 0, y: 0 };
 
   let shapeMode: 'none' | 'circle' = 'none';
-  let selectedShape: SVGPathElement | null = null;
   let isShapeDragging = false;
-  let shapeDragStart = { x: 0, y: 0, origX: 0, origY: 0, origAngle: 0, w: 0, h: 0 };
 
   let rectMode = false;
   let selectedRectPath: SVGPathElement | null = null;
@@ -134,6 +134,19 @@
     designerPanStart = { x: e.clientX, y: e.clientY };
     designerSVG.style.cursor = 'grab';
   });
+
+  function rgbToHex(rgb: string): string {
+    if (rgb.startsWith('#')) return rgb;
+    const result = rgb.match(/\d+/g);
+    if (!result) return '#000000';
+    return (
+      '#' +
+      result
+        .slice(0, 3)
+        .map(x => ('0' + parseInt(x).toString(16)).slice(-2))
+        .join('')
+    );
+  }
 
   function showShapeColorInput(path: SVGPathElement) {
     const color = path.getAttribute('stroke') || '#000000';
@@ -992,7 +1005,6 @@
     // --- End all drag/rotate states ---
     isResizing = false;
     isShapeDragging = false;
-    selectedShape = null;
     isPathDragging = false;
     isDesignerPanning = false;
     penDragging = null;
@@ -1845,6 +1857,10 @@
 
         makeDraggable(group);
         selectDesignerSeat(circle);
+        circle.addEventListener('click', (e) => {
+          e.stopPropagation();
+          selectDesignerSeat(circle);
+        });
       }
       // --- Handle shape drawing ---
       if (shapeMode === 'circle' && e.target === designerSVG) {
@@ -2010,7 +2026,7 @@
         text.setAttribute('fill', '#000');
         text.setAttribute('text-anchor', 'middle');
         text.setAttribute('dominant-baseline', 'middle');
-        text.textContent = 'Add Text';
+        text.textContent = 'Edit text...';
         text.style.cursor = '';
 
         // Create a rect as a background/border for the text
@@ -2057,6 +2073,10 @@
           textSizeValue.style.display = '';
           textSizeSlider.value = text.getAttribute('data-base-font-size') || '18';
           textSizeValue.textContent = textSizeSlider.value;
+
+          // --- Show and sync text color input ---
+          textColorInput.value = rgbToHex(text.getAttribute('fill') || '#000');
+          textColorLabel.style.display = '';
         }
 
         // Click-hold-move to drag, click to select
@@ -2108,6 +2128,12 @@
           ev.stopPropagation();
           justSelectedTextBox = true;
           selectTextBox();
+        });
+
+        textColorInput.addEventListener('input', () => {
+          if (selectedText) {
+            selectedText.setAttribute('fill', textColorInput.value);
+          }
         });
 
         // Touch support (optional, similar logic)
@@ -2175,6 +2201,7 @@
         textEditInput.style.display = 'none';
         textSizeSlider.style.display = 'none';
         textSizeValue.style.display = 'none';
+        textColorLabel.style.display = 'none';
       }
 
       if (!addMode) {

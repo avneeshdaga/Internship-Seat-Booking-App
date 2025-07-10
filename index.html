@@ -56,6 +56,10 @@
       <input id="textEditInput" type="text" placeholder="Edit text..." style="display:none; margin-right:8px;">
       <input id="textSizeSlider" type="range" min="4" max="64" value="18" style="display:none;">
       <span id="textSizeValue" style="display:none;">18</span>
+      <label id="textColorLabel" style="display:none; margin-right:12px;">
+        Text Color:
+        <input type="color" id="textColorInput" value="#000000">
+      </label>
       <button id="addRectBtn" type="button">Add Rectangle</button>
       <button id="addCircleBtn" type="button">Add Circle</button>
       <button id="rotateLeftBtn" type="button">Rotate Left</button>
@@ -108,7 +112,7 @@
     <!-- The seatSVG is reused for user selection -->
   </div>
 
-  <script src="dist/script.js" defer></script>
+  <script src="script.js" defer></script>
 </body>
 
 </html>
