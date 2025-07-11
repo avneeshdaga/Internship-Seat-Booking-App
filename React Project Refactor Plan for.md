@@ -44,7 +44,6 @@
 * \[x] 🎯 **Seat Tooltips** – Show “Seat A1 – ₹200” on hover
 * \[x] 📱 **Mobile Touch** – Better touch interaction
 * ✅ **Success Feedback** – Booking confirmation animations
-* \[ ] 🔊 **Loading States** *(optional)*
 
 ---
 
@@ -56,9 +55,8 @@
 
 * \[ ] ➕ **Add Seat Tool** – Click to place seats (placeholder exists)
 * \[ ] ✋ **Drag \& Drop** – Move seats around
-* \[ ] 🧮 **Multi-Select** – Ctrl + click to select seats
 * \[ ] ❌ **Delete Seats** – Remove selected seats
-* \[ ] 🛠️ **Seat Properties Panel** – Edit ID, size, color, etc.
+* \[ ] 🛠️ **Seat Properties Panel in sidebar** – Edit ID, size, color, data seat id.
 
 ---
 
@@ -85,8 +83,6 @@
 * \[ ] 💾 **Save / Load Layouts** – JSON export/import
 * \[ ] 🖼️ **SVG Export** – Download layout as SVG
 * \[ ] ⚡ **Performance Optimizations**
-* \[ ] ♿ **Accessibility Improvements**
-* \[ ] 🌐 **Cross-Browser Testing**
 
 ---
 
