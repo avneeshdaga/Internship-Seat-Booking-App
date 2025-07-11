@@ -1,200 +1,120 @@
-🧠 React Project Refactor Plan for Seat Booking App
+# 🧠 React Seat Booking – Updated Project Phase Plan
 
+---
 
+#### ✅ PHASE 1: Core Setup \& State Management – **COMPLETE**
 
-===========================
+###### 🎯 **Goal:** Establish foundation with all current state variables and app structure.
 
-PHASE 1: Core Setup \& State Management
+##### 🔧 Files Implemented:
 
-===========================
+* ✅ `src/types/index.ts` – All TypeScript interfaces
+* ✅ `src/hooks/useSeatStore.ts` – Zustand store replicating all `script.ts` variables
+* ✅ `src/App.tsx` – Root component with admin/user mode switching
+* ✅ `src/components/AppLayout.tsx` – Basic layout structure
 
-🎯 Goal: Establish foundation with all current state variables
+---
 
+### ✅ PHASE 2: Layout \& Modern Sidebar – **COMPLETE**
 
+🎯 **Goal:** Build a modern UI with a sidebar containing organized tools.
 
-Files:
+##### 🔧 Files Implemented:
 
-\- src/types/index.ts          → All TypeScript interfaces
+* ✅ `src/components/Sidebar.tsx` – Left sidebar with grouped tool sections
+* ✅ `src/components/MainContent.tsx` – Main SVG/canvas area (single adaptive canvas)
+* ✅ `src/styles/globals.css` – Clean modern styles (no fieldsets)
+* ✅ `AppLayout.tsx` – Connect sidebar to main content
 
-\- src/hooks/useSeatStore.ts   → Zustand store replicating ALL script.ts variables
+---
 
-\- src/App.tsx                 → Root component with admin/user mode switching
+### 🔄 PHASE 3: User Experience Polish – **IN PROGRESS**
 
-\- src/components/AppLayout.tsx → Basic layout structure with layout wrapper
+🎯 **Goal:** Enhance current setup with better UX, keeping structure intact.
 
+##### 🔧 Keep These As-Is:
 
+* ✅ `MainContent.tsx` – Works perfectly
+* ✅ `AppLayout.tsx`
+* ✅ `Sidebar.tsx`
 
-===========================
+##### 📋 Phase 3 Tasks:
 
-PHASE 2: Layout \& Modern Sidebar
+* ✅ Reduced hover animations
+* \[x] 🎯 **Seat Tooltips** – Show “Seat A1 – ₹200” on hover
+* \[x] 📱 **Mobile Touch** – Better touch interaction
+* ✅ **Success Feedback** – Booking confirmation animations
+* \[ ] 🔊 **Loading States** *(optional)*
 
-===========================
+---
 
-🎯 Goal: Modern UI with left sidebar containing organized tools
+### 📐 PHASE 4: Designer Core Tools – **PLANNED**
 
+🎯 **Goal:** Add seat creation and editing tools to the existing canvas.
 
+##### 🛠 Features to Add (in `MainContent.tsx`):
 
-Files:
+* \[ ] ➕ **Add Seat Tool** – Click to place seats (placeholder exists)
+* \[ ] ✋ **Drag \& Drop** – Move seats around
+* \[ ] 🧮 **Multi-Select** – Ctrl + click to select seats
+* \[ ] ❌ **Delete Seats** – Remove selected seats
+* \[ ] 🛠️ **Seat Properties Panel** – Edit ID, size, color, etc.
 
-\- src/components/Sidebar.tsx        → Left sidebar with grouped tool sections
+---
 
-\- src/components/MainContent.tsx    → Main SVG/canvas area
+### 🎨 PHASE 5: Advanced Drawing Tools – **PLANNED**
 
-\- src/styles/globals.css            → Clean modern styles (no fieldsets)
+🎯 **Goal:** Re-implement canvas tools from original `script.ts`.
 
-\- Update: AppLayout.tsx             → Connect sidebar to main content
+##### 🧰 Canvas Enhancements:
 
+* \[ ] 🖊️ **Pen Tool** – Draw bezier curves with control points
+* \[ ] ◼️ **Rectangle / Circle Tool** – Add resizable shapes
+* \[ ] ✍️ **Text Tool** – Editable in-place text
+* \[ ] 🔄 **Rotation** – 90° rotation of elements
+* \[ ] 🌄 **Background Images** – Upload and display
 
+---
 
-===========================
+### 🎯 PHASE 6: Final Polish – **PLANNED**
 
-PHASE 3: User Functionality
+🎯 **Goal:** Reach feature parity with the vanilla version and improve UX.
 
-===========================
+##### ✅ Final Touches:
 
-🎯 Goal: Implement user-side seat selection + pan/zoom
+* \[ ] 💾 **Save / Load Layouts** – JSON export/import
+* \[ ] 🖼️ **SVG Export** – Download layout as SVG
+* \[ ] ⚡ **Performance Optimizations**
+* \[ ] ♿ **Accessibility Improvements**
+* \[ ] 🌐 **Cross-Browser Testing**
 
+---
 
+### ✅ Confirmed Requirements
 
-Files:
+✔ **Keep ALL existing features**  
+    – Pen, shapes, text, background images, zoom/pan, rotation, drag
 
-\- src/components/UserCanvas.tsx         → SVG layout rendered for users
+✔ **Modern Sidebar**  
+    – Grouped tool sections, no clutter
 
-\- src/components/shared/SVGSeat.tsx     → Individual seat rendering + interaction
+✔ **Better UI/UX**  
+    – Clean layout, modern buttons, no `<fieldset>`
 
-\- src/components/shared/ZoomControls.tsx→ UI controls for zoom/pan
+✔ **No LocalStorage**  
+    – Prepare for client-server sync later
 
-\- src/utils/useSVGUtils.ts              → Utility functions for SVG manipulation
+✔ **Same Functionality**  
+    – Everything behaves the same — just cleaner and scalable
 
+---
 
+### 🔧 Target Structure Summary
 
-===========================
-
-PHASE 4: Designer Core Tools
-
-===========================
-
-🎯 Goal: Add/drag/select seats for layout creation
-
-
-
-Files:
-
-\- src/components/DesignerCanvas.tsx → Canvas for layout designing
-
-\- src/utils/svgHelpers.ts           → Core SVG logic functions
-
-Implement:
-
-✔ Add seat
-
-✔ Drag/drop
-
-✔ Selection
-
-✔ Basic tool actions
-
-
-
-===========================
-
-PHASE 5: Advanced Drawing Tools
-
-===========================
-
-🎯 Goal: Bring in full set of advanced features
-
-
-
-Tools:
-
-✔ Pen tool with bezier path drawing
-
-✔ Rectangle \& circle with resizable handles
-
-✔ Text tool with in-place editing
-
-✔ Background image support
-
-✔ Rotation for elements
-
-
-
-===========================
-
-PHASE 6: Polish \& Final Features
-
-===========================
-
-🎯 Goal: Achieve full feature parity + improved UX
-
-
-
-Tasks:
-
-✔ Save/load layouts (no localStorage)
-
-✔ Grid layout generation (rows/cols/size)
-
-✔ Zoom \& pan refinements
-
-✔ Clean, modern button \& icon styling
-
-✔ Fully responsive UI
-
-
-
-===========================
-
-✅ Confirmed Requirements:
-
-===========================
-
-✔ Keep ALL existing features:
-
-   - Pen, shapes, text, background images, zoom/pan, rotation, drag
-
-
-
-✔ Modern Sidebar:
-
-   - Grouped tool sections, no clutter
-
-
-
-✔ Better UI/UX:
-
-   - Clean layout, modern buttons, no `<fieldset>`
-
-
-
-✔ No LocalStorage:
-
-   - Prepare for client-server sync later
-
-
-
-✔ Same Functionality:
-
-   - Everything behaves same — just cleaner + scalable
-
-
-
-===========================
-
-🔧 Target Structure Summary:
-
-===========================
-
-📦 Left sidebar → tools grouped cleanly
-
-📐 Clean interface → no clutter or legacy styles
-
-🔁 Maintain all current functionality
-
-🧠 Zustand for state → easy updates \& scale
-
-🛠 TypeScript → safer, scalable code
-
-📱 Responsive Design → mobile ready
+📦 **Left Sidebar** – Tools grouped cleanly  
+📐 **Clean Interface** – No clutter or legacy styles  
+🔁 **Preserve All Functionality**  
+🧠 **Zustand for State** – Easy updates \& scalability  
+🛠 **TypeScript** – Safer, maintainable code  
+📱 **Responsive Design** – Mobile-ready layout
 
