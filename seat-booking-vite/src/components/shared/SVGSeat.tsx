@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+﻿import React, { useState, useCallback } from 'react';
 import { Seat } from '../../types';
 
 interface SVGSeatProps {
@@ -6,106 +6,137 @@ interface SVGSeatProps {
   mode: 'admin' | 'user';
   isSelected: boolean;
   isOccupied: boolean;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
+  onAdminSelect?: () => void;
+  onDragStart?: (clientX: number, clientY: number) => void;
+  onDragUpdate?: (clientX: number, clientY: number) => void;
+  onDragEnd?: () => void;
   pricePerSeat?: number;
 }
 
-const SVGSeat: React.FC<SVGSeatProps> = ({ 
-  seat, 
-  mode, 
-  isSelected, 
-  isOccupied, 
-  onClick, 
-  pricePerSeat = 200 
+const SVGSeat: React.FC<SVGSeatProps> = ({
+  seat,
+  mode,
+  isSelected,
+  isOccupied,
+  onClick,
+  onAdminSelect,
+  onDragStart,
+  onDragUpdate,
+  onDragEnd,
+  pricePerSeat = 200
 }) => {
   const [showTooltip, setShowTooltip] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
+  // Handle mouse down for dragging
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+
+    if (mode === 'admin' && !isOccupied) {
+      // Select seat first
+      if (onAdminSelect) {
+        onAdminSelect();
+      }
+      
+      // Start drag
+      if (onDragStart) {
+        setIsDragging(true);
+        onDragStart(e.clientX, e.clientY);
+      }
+    } else {
+      // User mode: regular click
+      onClick(e);
+    }
+  }, [mode, isOccupied, onAdminSelect, onDragStart, onClick]);
+
+  // Handle mouse up to stop dragging
+  const handleMouseUp = useCallback(() => {
+    if (isDragging) {
+      setIsDragging(false);
+      if (onDragEnd) {
+        onDragEnd();
+      }
+    }
+  }, [isDragging, onDragEnd]);
+
+  // Get seat fill color (exact vanilla script logic)
   const getFill = () => {
     if (isOccupied) return '#d32f2f'; // Red for occupied
-    if (isSelected) return '#4caf50'; // Green for selected
-    if (mode === 'admin') return '#2196f3'; // Blue for designer
+    if (mode === 'admin') return '#49D44B'; // Green for admin seats (exact vanilla)
+    if (isSelected) return '#4caf50'; // Green for user selection
     return '#e0e0e0'; // Gray for available
   };
 
+  // Get seat stroke color (exact vanilla script logic)
   const getStroke = () => {
+    if (mode === 'admin' && isSelected) return '#f00'; // Red stroke for admin selection (exact vanilla)
     if (isSelected) return '#2e7d32';
     if (isOccupied) return '#b71c1c';
-    return '#666';
+    return '#222'; // Default stroke (exact vanilla)
   };
 
-  const getTooltipText = () => {
-    if (mode === 'admin') {
-      return `Seat ${seat.id} `;
-    }
-    if (isOccupied) {
-      return `Seat ${seat.id} - Occupied`;
-    }
-    return `Seat ${seat.id} - ₹${pricePerSeat}`;
+  // Get stroke width (exact vanilla script logic)
+  const getStrokeWidth = () => {
+    if (mode === 'admin' && isSelected) return '3'; // Thicker stroke for admin selection
+    return '1.5';
   };
 
-  const getTooltipClass = () => {
-    if (isOccupied) return 'seat-tooltip occupied';
-    if (isSelected) return 'seat-tooltip selected';
-    return 'seat-tooltip available';
+  // Get cursor style
+  const getCursor = () => {
+    if (mode === 'admin' && !isOccupied) return isDragging ? 'grabbing' : 'grab';
+    if (mode === 'user' && !isOccupied) return 'pointer';
+    if (isOccupied) return 'not-allowed';
+    return 'default';
   };
 
   return (
-    <g 
-      className="seat-group"
+    <g
+      className={`seat-group ${isDragging ? 'dragging' : ''}`}
+      data-seat-id={seat.id}
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
-      onClick={onClick}
-      style={{ 
-      cursor: (isOccupied) ? 'not-allowed' : (mode === 'user' ? 'pointer' : 'default') 
-      }}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      style={{ cursor: getCursor() }}
     >
+      {/* Main seat circle */}
       <circle
-      cx={seat.cx}
-      cy={seat.cy}
-      r={seat.r}
-      fill={getFill()}
-      stroke={getStroke()}
-      strokeWidth="1.5"
-      className="seat-circle"
+        cx={seat.cx}
+        cy={seat.cy}
+        r={seat.r}
+        fill={getFill()}
+        stroke={getStroke()}
+        strokeWidth={getStrokeWidth()}
+        className="seat-circle"
       />
-      <text
-      x={seat.cx}
-      y={seat.cy}
-      textAnchor="middle"
-      dominantBaseline="middle"
-      fontSize="8"
-      fill="white"
-      fontWeight="bold"
-      className="seat-label"
-      style={{ pointerEvents: 'none' }}
-      >
-      {seat.id}
-      </text>
-      
+
       {/* Tooltip */}
       {showTooltip && (
-      <g className="seat-tooltip-group">
-        <rect
-        x={seat.cx - 50}
-        y={seat.cy - seat.r - 25}
-        width="100"
-        height="20"
-        rx="4"
-        className={getTooltipClass()}
-        style={{ pointerEvents: 'none' }}
-        />
-        <text
-        x={seat.cx}
-        y={seat.cy - seat.r - 15}
-        textAnchor="middle"
-        dominantBaseline="middle"
-        fontSize="10"
-        className="seat-tooltip-text"
-        style={{ pointerEvents: 'none' }}
-        >
-        {getTooltipText()}
-        </text>
-      </g>
+        <g className="seat-tooltip-group">
+          <rect
+            x={seat.cx - 50}
+            y={seat.cy - seat.r - 25}
+            width="100"
+            height="18"
+            rx="4"
+            fill="#374151"
+            style={{ pointerEvents: 'none' }}
+          />
+          <text
+            x={seat.cx}
+            y={seat.cy - seat.r - 16}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize="10"
+            fill="white"
+            style={{ pointerEvents: 'none' }}
+          >
+            {mode === 'admin'
+              ? `${seat.id}`
+              : `${seat.id} - ₹${pricePerSeat}`}
+          </text>
+        </g>
       )}
     </g>
   );

@@ -1,4 +1,3 @@
-// Complete Zustand store with all your vanilla functionality
 import { create } from "zustand";
 import {
   Seat,
@@ -9,8 +8,26 @@ import {
   PenDragState,
 } from "../types";
 
+// Add this helper function at the top of the file, before the interface
+function getSVGCoordsFromClient(
+  svg: SVGSVGElement,
+  clientX: number,
+  clientY: number
+) {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const ctm = svg.getScreenCTM();
+
+  if (ctm) {
+    return pt.matrixTransform(ctm.inverse());
+  }
+
+  return { x: clientX, y: clientY };
+}
+
 interface SeatState {
-  // Constants & Core State (exact replica from script.ts)
+  // Constants & Core State
   svgNS: string;
   pricePerSeat: number;
   selectedSeats: Set<string>;
@@ -18,15 +35,19 @@ interface SeatState {
   seatMapType: SeatMapType;
   lastSVGString: string;
   maxSelectableSeats: number | null;
-  selectedDesignerSeat: Seat | null;
-  addMode: boolean;
 
-  // Drag & UI state
-  dragTarget: SVGGElement | null;
+  // Phase 4: Designer seat selection (string ID, not object)
+  selectedDesignerSeat: string | null;
+  addMode: boolean;
+  isDragging: boolean;
+  dragStart: { x: number; y: number; seatX: number; seatY: number } | null;
+
+  // Phase 4: Drag state (string ID, not DOM element)
+  dragTarget: string | null;
+
+  // Zoom/Pan state
   userZoomLevel: number;
   justDragged: boolean;
-
-  // Designer zoom/pan state (exact replica from script.ts)
   designerPanX: number;
   designerPanY: number;
   designerPanW: number;
@@ -37,8 +58,6 @@ interface SeatState {
   designerViewY: number;
   designerViewW: number;
   designerViewH: number;
-
-  // User zoom/pan state
   userPanX: number;
   userPanY: number;
   userPanW: number;
@@ -46,7 +65,7 @@ interface SeatState {
   isPanning: boolean;
   panStart: { x: number; y: number };
 
-  // Tool modes (exact replica)
+  // Tool modes
   penMode: boolean;
   textMode: boolean;
   rectMode: boolean;
@@ -69,7 +88,7 @@ interface SeatState {
   currentSeats: Seat[];
   textElements: TextElement[];
 
-  // Actions (replicating your exact functions)
+  // Actions
   setSelectedSeats: (seats: Set<string>) => void;
   addSeat: (seat: Seat) => void;
   updateSeat: (id: string, updates: Partial<Seat>) => void;
@@ -83,8 +102,6 @@ interface SeatState {
   setMaxSelectableSeats: (max: number | null) => void;
   showSuccess: (message: string) => void;
   hideSuccess: () => void;
-
-  // Seat count logic (exact replica of your promptForSeatCount)
   countAvailableSeats: () => number;
   promptForSeatCount: () => boolean;
 
@@ -97,13 +114,27 @@ interface SeatState {
 
   // Background image
   setBgImageVisible: (visible: boolean) => void;
-
-  // Clear all
   clearAll: () => void;
+
+  // Phase 4: Designer actions
+  selectDesignerSeat: (seatId: string | null) => void;
+  deselectDesignerSeat: () => void;
+  deleteSelectedSeat: () => void;
+  updateSeatId: (oldId: string, newId: string) => boolean;
+  updateSeatRadius: (seatId: string, radius: number) => void;
+  startSeatDrag: (seatId: string, startX: number, startY: number) => void;
+  updateSeatDrag: (currentX: number, currentY: number) => void;
+  stopSeatDrag: () => void;
+  deselectAll: () => void;
+
+  // Phase 4: Enhanced seat management
+  generateSeatId: () => string;
+  updateSeatPosition: (seatId: string, x: number, y: number) => void;
+  clearGrid: () => void;
 }
 
 export const useSeatStore = create<SeatState>((set, get) => ({
-  // Initial state (exactly like your script.ts constants)
+  // Initial state
   svgNS: "http://www.w3.org/2000/svg",
   pricePerSeat: 200,
   selectedSeats: new Set(),
@@ -111,14 +142,13 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   seatMapType: "grid",
   lastSVGString: "",
   maxSelectableSeats: null,
+
   selectedDesignerSeat: null,
   addMode: false,
-
   dragTarget: null,
+
   userZoomLevel: 1,
   justDragged: false,
-
-  // Designer zoom/pan (exact values from your script.ts)
   designerPanX: 0,
   designerPanY: 0,
   designerPanW: 1000,
@@ -129,23 +159,17 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   designerViewY: 0,
   designerViewW: 1000,
   designerViewH: 500,
-
-  // User zoom/pan (exact values from your script.ts)
   userPanX: 0,
   userPanY: 0,
   userPanW: 1000,
   userPanH: 500,
   isPanning: false,
   panStart: { x: 0, y: 0 },
-
-  // Tool modes
   penMode: false,
   textMode: false,
   rectMode: false,
   shapeMode: "none",
   bgImageVisible: true,
-
-  // Drawing state
   currentPenPath: null,
   selectedPenPath: null,
   finishedPenPaths: [],
@@ -154,12 +178,11 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   penDragging: null,
   showSuccessAnimation: false,
   successMessage: "",
-
-  // Current data
   currentSeats: [],
   textElements: [],
+  isDragging: false,
+  dragStart: null,
 
-  // Actions (replicating your exact function logic)
   setSelectedSeats: (seats) => set({ selectedSeats: seats }),
 
   addSeat: (seat) =>
@@ -179,19 +202,30 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       currentSeats: state.currentSeats.filter((seat) => seat.id !== id),
     })),
 
-  // EXACT seat selection logic from your vanilla code
+  clearGrid: () => {
+    set({
+      currentSeats: [],
+      selectedSeats: new Set(),
+      selectedDesignerSeat: null,
+      maxSelectableSeats: null,
+      // Also clear any other drawing elements if needed
+      finishedPenPaths: [],
+      textElements: [],
+      currentPenPath: null,
+      selectedPenPath: null,
+      selectedRectPath: null,
+      selectedCirclePath: null,
+    });
+  },
+
   toggleSeatSelection: (seatId) =>
     set((state) => {
-      // Find the actual seat object
       const seat = state.currentSeats.find((s) => s.id === seatId);
-
-      // Don't allow selection if seat is occupied
       if (!seat || seat.occupied) {
         console.log("Cannot select occupied seat:", seatId);
         return state;
       }
 
-      // If no max seats set, prompt first
       if (state.maxSelectableSeats === null) {
         const prompted = get().promptForSeatCount();
         if (!prompted) return state;
@@ -229,7 +263,6 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       const seatsList = Array.from(state.selectedSeats).sort().join(", ");
       const total = state.selectedSeats.size * state.pricePerSeat;
 
-      // Show success animation
       setTimeout(() => {
         get().showSuccess(
           `🎉 Booking confirmed!\nSeats: ${seatsList}\nTotal: ₹${total}`
@@ -268,10 +301,8 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     })),
 
   setShapeMode: (mode) => set({ shapeMode: mode }),
-
   setMaxSelectableSeats: (max) => set({ maxSelectableSeats: max }),
 
-  // EXACT grid generation from your vanilla code
   generateGrid: (rows, cols, seatSize) =>
     set(() => {
       const seats: Seat[] = [];
@@ -296,13 +327,11 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       return { currentSeats: seats, seatMapType: "grid" };
     }),
 
-  // EXACT count available seats logic
   countAvailableSeats: () => {
     const state = get();
     return state.currentSeats.filter((seat) => !seat.occupied).length;
   },
 
-  // EXACT prompt for seat count logic from your vanilla script
   promptForSeatCount: () => {
     const state = get();
     const availableSeats = state.countAvailableSeats();
@@ -331,15 +360,171 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       return false;
     }
 
-    set({
-      maxSelectableSeats: num,
-      selectedSeats: new Set(),
-    });
+    set({ maxSelectableSeats: num, selectedSeats: new Set() });
     alert(`You can now select up to ${num} seats.`);
     return true;
   },
 
-  // EXACT zoom/pan logic from your vanilla script
+  // Phase 4: Designer actions (fixed)
+  selectDesignerSeat: (seatId: string | null) => {
+    set({ selectedDesignerSeat: seatId });
+  },
+
+  deselectDesignerSeat: () => {
+    set({ selectedDesignerSeat: null });
+  },
+
+  deleteSelectedSeat: () => {
+    const { selectedDesignerSeat, currentSeats } = get();
+    if (selectedDesignerSeat) {
+      set({
+        currentSeats: currentSeats.filter(
+          (seat) => seat.id !== selectedDesignerSeat
+        ),
+        selectedDesignerSeat: null,
+      });
+    }
+  },
+
+  updateSeatId: (oldId: string, newId: string) => {
+    const { currentSeats } = get();
+    const existingSeat = currentSeats.find((s) => s.id === newId);
+    if (existingSeat) return false;
+
+    set({
+      currentSeats: currentSeats.map((seat) =>
+        seat.id === oldId ? { ...seat, id: newId } : seat
+      ),
+      selectedDesignerSeat: newId,
+    });
+    return true;
+  },
+
+  updateSeatRadius: (seatId: string, radius: number) => {
+    const { currentSeats } = get();
+    set({
+      currentSeats: currentSeats.map((seat) =>
+        seat.id === seatId ? { ...seat, r: radius } : seat
+      ),
+    });
+  },
+
+  startSeatDrag: (seatId: string, clientX: number, clientY: number) => {
+    const { currentSeats } = get();
+    const seat = currentSeats.find((s) => s.id === seatId);
+
+    if (seat) {
+      // Auto-select the seat being dragged
+      set({
+        selectedDesignerSeat: seatId,
+        dragTarget: seatId,
+        isDragging: true,
+        dragStart: {
+          x: clientX,
+          y: clientY,
+          seatX: seat.cx,
+          seatY: seat.cy,
+        },
+      });
+    }
+  },
+
+  updateSeatDrag: (clientX: number, clientY: number) => {
+    const { dragTarget, dragStart, currentSeats } = get();
+
+    if (!dragTarget || !dragStart) return;
+
+    // Get the SVG element from the DOM (we need this for coordinate conversion)
+    const svgElement = document.querySelector(".seat-canvas") as SVGSVGElement;
+    if (!svgElement) return;
+
+    // Convert current mouse position to SVG coordinates
+    const currentSVGCoords = getSVGCoordsFromClient(
+      svgElement,
+      clientX,
+      clientY
+    );
+
+    // Convert drag start position to SVG coordinates
+    const startSVGCoords = getSVGCoordsFromClient(
+      svgElement,
+      dragStart.x,
+      dragStart.y
+    );
+
+    // Calculate delta in SVG space
+    const dx = currentSVGCoords.x - startSVGCoords.x;
+    const dy = currentSVGCoords.y - startSVGCoords.y;
+
+    // Update seat position using original seat position + delta
+    const newX = dragStart.seatX + dx;
+    const newY = dragStart.seatY + dy;
+
+    set({
+      currentSeats: currentSeats.map((seat) =>
+        seat.id === dragTarget ? { ...seat, cx: newX, cy: newY } : seat
+      ),
+    });
+  },
+
+  stopSeatDrag: () => {
+    set({
+      dragTarget: null,
+      isDragging: false,
+      dragStart: null,
+    });
+  },
+
+  deselectAll: () => {
+    set({ selectedDesignerSeat: null });
+  },
+
+  // Phase 4: Enhanced seat management
+  generateSeatId: () => {
+    const { currentSeats } = get();
+    const usedNumbers = new Set<number>();
+
+    currentSeats.forEach((seat) => {
+      const id = seat.id;
+      if (id && /^Seat\d+$/.test(id)) {
+        const num = parseInt(id.replace("Seat", ""), 10);
+        if (!isNaN(num)) usedNumbers.add(num);
+      }
+    });
+
+    let next = 1;
+    while (usedNumbers.has(next)) next++;
+    return `Seat${next}`;
+  },
+
+  updateSeatPosition: (seatId: string, x: number, y: number) => {
+    set((state) => ({
+      currentSeats: state.currentSeats.map((seat) =>
+        seat.id === seatId ? { ...seat, cx: x, cy: y } : seat
+      ),
+    }));
+  },
+
+  duplicateSeat: (seatId: string) => {
+    const { currentSeats, generateSeatId } = get();
+    const originalSeat = currentSeats.find((s) => s.id === seatId);
+
+    if (originalSeat) {
+      const newSeat = {
+        ...originalSeat,
+        id: generateSeatId(),
+        cx: originalSeat.cx + 30, // Offset slightly
+        cy: originalSeat.cy + 30,
+      };
+
+      set((state) => ({
+        currentSeats: [...state.currentSeats, newSeat],
+        selectedDesignerSeat: newSeat.id,
+      }));
+    }
+  },
+
+  // All your existing zoom/pan actions... (keep them as they are)
   setUserZoom: (zoom, centerX, centerY) =>
     set((state) => {
       const newZoom = Math.max(1, Math.min(3, zoom));
@@ -359,7 +544,6 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         newPanY = centerY - relY * newH;
       }
 
-      // CLAMP PAN
       const viewX = 0,
         viewY = 0,
         viewW = 1000,
@@ -403,7 +587,6 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         newPanY = centerY - relY * newH;
       }
 
-      // CLAMP PAN
       if (newW > state.designerViewW) {
         newPanX = state.designerViewX;
       } else {
@@ -445,7 +628,6 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         let newPanX = state.designerPanX - dx;
         let newPanY = state.designerPanY - dy;
 
-        // CLAMP DESIGNER PAN - prevent going out of bounds
         if (state.designerPanW > state.designerViewW) {
           newPanX = state.designerViewX;
         } else {
@@ -481,7 +663,6 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         let newPanX = state.userPanX - dx;
         let newPanY = state.userPanY - dy;
 
-        // CLAMP USER PAN - prevent going out of bounds
         const viewX = 0,
           viewY = 0,
           viewW = 1000,

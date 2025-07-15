@@ -15,7 +15,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     resetSelection,
     promptForSeatCount,
     countAvailableSeats,
-    
+
     // Admin state
     addMode,
     penMode,
@@ -28,17 +28,93 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     clearAll,
     bgImageVisible,
     setBgImageVisible,
-    
+
     // Current data
     currentSeats,
     setUserZoom,
-    setDesignerZoom
+    setDesignerZoom,
+
+    selectDesignerSeat,
+    selectedDesignerSeat,
+    deselectDesignerSeat,
+    deleteSelectedSeat,
+    updateSeatId,
+    updateSeatRadius,
+    clearGrid,
   } = useSeatStore();
 
   // Local state for grid inputs (EXACT from React)
   const [gridRows, setGridRows] = useState(5);
   const [gridCols, setGridCols] = useState(8);
   const [seatSize, setSeatSize] = useState(15);
+
+  // NEW: State for seat ID editing
+  const [newSeatId, setNewSeatId] = useState('');
+  const [seatIdError, setSeatIdError] = useState('');
+
+  // NEW: Update seat ID state when selection changes
+  React.useEffect(() => {
+    if (selectedDesignerSeat) {
+      setNewSeatId(selectedDesignerSeat);
+      setSeatIdError('');
+    }
+  }, [selectedDesignerSeat]);
+
+  const handleClearGrid = () => {
+    if (currentSeats.length === 0) {
+      alert('No seats to clear.');
+      return;
+    }
+
+    const confirmClear = confirm(
+      `Are you sure you want to delete all ${currentSeats.length} seats?\n\nThis action cannot be undone.`
+    );
+
+    if (confirmClear) {
+      clearGrid();
+      console.log('Grid cleared');
+    }
+  };
+
+  // NEW: Get current seat radius
+  const getCurrentSeatRadius = () => {
+    if (!selectedDesignerSeat) return 12;
+    const seat = currentSeats.find(s => s.id === selectedDesignerSeat);
+    return seat ? seat.r : 12;
+  };
+
+  // NEW: Handle seat ID update with validation
+  const handleUpdateSeatId = () => {
+    if (!newSeatId || !selectedDesignerSeat) return;
+
+    // Check if ID is the same
+    if (newSeatId === selectedDesignerSeat) {
+      setSeatIdError('');
+      return;
+    }
+
+    // Check if ID already exists
+    const existingSeat = currentSeats.find(s => s.id === newSeatId);
+    if (existingSeat) {
+      setSeatIdError(`Seat ID "${newSeatId}" already exists!`);
+      return;
+    }
+
+    // Validate ID format (optional - can be removed if not needed)
+    if (newSeatId.length < 1 || newSeatId.length > 10) {
+      setSeatIdError('Seat ID must be 1-10 characters long');
+      return;
+    }
+
+    // Update the seat ID
+    const success = updateSeatId(selectedDesignerSeat, newSeatId);
+    if (success) {
+      setSeatIdError('');
+      console.log(`Seat ID updated from "${selectedDesignerSeat}" to "${newSeatId}"`);
+    } else {
+      setSeatIdError('Failed to update seat ID');
+    }
+  };
 
   const handleGenerateGrid = () => {
     generateGrid(gridRows, gridCols, seatSize);
@@ -66,30 +142,30 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
             <h3>Grid Layout</h3>
             <div className="input-group">
               <label>
-                Rows: 
-                <input 
-                  type="number" 
-                  min="1" 
+                Rows:
+                <input
+                  type="number"
+                  min="1"
                   max="20"
                   value={gridRows}
                   onChange={(e) => setGridRows(parseInt(e.target.value) || 1)}
                 />
               </label>
               <label>
-                Columns: 
-                <input 
-                  type="number" 
-                  min="1" 
+                Columns:
+                <input
+                  type="number"
+                  min="1"
                   max="20"
                   value={gridCols}
                   onChange={(e) => setGridCols(parseInt(e.target.value) || 1)}
                 />
               </label>
               <label>
-                Seat Size: 
-                <input 
-                  type="number" 
-                  min="5" 
+                Seat Size:
+                <input
+                  type="number"
+                  min="5"
                   max="50"
                   value={seatSize}
                   onChange={(e) => setSeatSize(parseInt(e.target.value) || 15)}
@@ -99,13 +175,20 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
             <button className="primary-btn" onClick={handleGenerateGrid}>
               🏗️ Create Grid ({gridRows}×{gridCols})
             </button>
+            <button
+              className="danger-btn"
+              onClick={handleClearGrid}
+              disabled={currentSeats.length === 0}
+            >
+              🗑️ Clear All seats ({currentSeats.length} seats)
+            </button>
           </div>
 
           {/* Designer Tools - EXACT from React */}
           <div className="tool-section">
             <h3>Designer Tools</h3>
             <div className="tool-grid">
-              <button 
+              <button
                 className={`tool-btn ${addMode ? 'active' : ''}`}
                 onClick={() => toggleMode('addMode')}
                 title="Add Seat - Click on canvas to place"
@@ -113,8 +196,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
                 <span className="tool-icon">⚪</span>
                 <span className="tool-label">Add Seat</span>
               </button>
-              
-              <button 
+
+              <button
                 className={`tool-btn ${penMode ? 'active' : ''}`}
                 onClick={() => toggleMode('penMode')}
                 title="Pen Tool - Draw Bezier Curves"
@@ -122,8 +205,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
                 <span className="tool-icon">✏️</span>
                 <span className="tool-label">Pen Tool</span>
               </button>
-              
-              <button 
+
+              <button
                 className={`tool-btn ${textMode ? 'active' : ''}`}
                 onClick={() => toggleMode('textMode')}
                 title="Add Text"
@@ -131,8 +214,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
                 <span className="tool-icon">T</span>
                 <span className="tool-label">Add Text</span>
               </button>
-              
-              <button 
+
+              <button
                 className={`tool-btn ${rectMode ? 'active' : ''}`}
                 onClick={() => toggleMode('rectMode')}
                 title="Add Rectangle"
@@ -140,8 +223,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
                 <span className="tool-icon">⬜</span>
                 <span className="tool-label">Rectangle</span>
               </button>
-              
-              <button 
+
+              <button
                 className={`tool-btn ${shapeMode === 'circle' ? 'active' : ''}`}
                 onClick={() => setShapeMode(shapeMode === 'circle' ? 'none' : 'circle')}
                 title="Add Circle"
@@ -151,6 +234,70 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
               </button>
             </div>
           </div>
+
+          {/* === PHASE 4: SEAT PROPERTIES === */}
+          {selectedDesignerSeat && (
+            <div className="tool-section">
+              <h3>Selected: {selectedDesignerSeat}</h3>
+
+              <div className="input-group">
+                <label>
+                  Seat ID:
+                  <div className="seat-id-input-group">
+                    <input
+                      type="text"
+                      value={newSeatId}
+                      onChange={(e) => setNewSeatId(e.target.value.trim())}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          handleUpdateSeatId();
+                        }
+                      }}
+                      placeholder="Enter new seat ID"
+                    />
+                    <button
+                      className="update-btn"
+                      onClick={handleUpdateSeatId}
+                      disabled={!newSeatId || newSeatId === selectedDesignerSeat}
+                      title="Update seat ID"
+                    >
+                      ✓ Update
+                    </button>
+                  </div>
+                  {seatIdError && <span className="error-message">{seatIdError}</span>}
+                </label>
+
+                <label>
+                  Size:
+                  <input
+                    type="range"
+                    min="8"
+                    max="30"
+                    className="slider seat-slider"
+                    value={getCurrentSeatRadius()}
+                    onChange={(e) => updateSeatRadius(selectedDesignerSeat, parseInt(e.target.value))}
+                  />
+                  <span className="range-value">{getCurrentSeatRadius()}px</span>
+                </label>
+              </div>
+
+              <div className="button-group">
+                <button
+                  className="secondary-btn"
+                  onClick={() => deselectDesignerSeat()}
+                >
+                  ❌ Deselect
+                </button>
+
+                <button
+                  className="danger-btn"
+                  onClick={() => deleteSelectedSeat()}
+                >
+                  🗑️ Delete
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Active Tool Info - EXACT from React */}
           {(addMode || penMode || textMode || rectMode || shapeMode === 'circle') && (
@@ -172,26 +319,26 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
             <div className="control-group">
               <label>
                 Stroke Width:
-                <input 
-                  type="range" 
-                  min="1" 
-                  max="10" 
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
                   defaultValue="2"
                   className="slider"
                 />
               </label>
               <label>
                 Stroke Color:
-                <input 
-                  type="color" 
+                <input
+                  type="color"
                   defaultValue="#000000"
                   className="color-input"
                 />
               </label>
               <label>
                 Fill Color:
-                <input 
-                  type="color" 
+                <input
+                  type="color"
                   defaultValue="#ffffff"
                   className="color-input"
                 />
@@ -215,7 +362,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
             <h3>Background</h3>
             <div className="button-group">
               <button className="secondary-btn">🖼️ Add Background Image</button>
-              <button 
+              <button
                 className="secondary-btn"
                 onClick={() => setBgImageVisible(!bgImageVisible)}
               >
@@ -231,7 +378,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
               <button className="secondary-btn">📁 Upload SVG</button>
               <button className="secondary-btn">💾 Save Layout</button>
               <button className="secondary-btn">📂 Load Layout</button>
-              <button 
+              <button
                 className="danger-btn"
                 onClick={clearAll}
               >
@@ -288,27 +435,27 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
               <span className="value">₹{selectedSeats.size * pricePerSeat}</span>
             </div>
           </div>
-          
+
           {/* Show prompt button if no max seats set */}
           {!maxSelectableSeats && countAvailableSeats() > 0 && (
-            <button 
+            <button
               className="primary-btn"
               onClick={handlePromptSeatCount}
             >
               🎯 Set Seat Count
             </button>
           )}
-          
+
           {/* Show booking button if seats selected */}
-          <button 
+          <button
             className="primary-btn"
             onClick={confirmBooking}
             disabled={selectedSeats.size === 0}
           >
             🎫 Confirm Booking
           </button>
-          
-          <button 
+
+          <button
             className="secondary-btn"
             onClick={resetSelection}
           >
@@ -326,10 +473,10 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
                 <span>{Math.round((selectedSeats.size / maxSelectableSeats) * 100)}%</span>
               </div>
               <div className="progress-bar">
-                <div 
-                  className="progress-fill" 
-                  style={{ 
-                    width: `${(selectedSeats.size / maxSelectableSeats) * 100}%` 
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: `${(selectedSeats.size / maxSelectableSeats) * 100}%`
                   }}
                 />
               </div>

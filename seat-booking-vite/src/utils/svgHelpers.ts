@@ -13,18 +13,15 @@ export interface ViewBox {
   height: number;
 }
 
-// Get SVG coordinates from client coordinates (exact replica of your getSVGCoords)
-export function getSVGCoords(svg: SVGSVGElement, clientX: number, clientY: number): SVGCoords {
-  const rect = svg.getBoundingClientRect();
-  const viewBox = svg.viewBox.baseVal;
-  
-  const relativeX = (clientX - rect.left) / rect.width;
-  const relativeY = (clientY - rect.top) / rect.height;
-  
-  const x = viewBox.x + (relativeX * viewBox.width);
-  const y = viewBox.y + (relativeY * viewBox.height);
-  
-  return { x, y };
+export function getSVGCoords(svg: SVGSVGElement, clientX: number, clientY: number) {
+  const pt = svg.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const ctm = svg.getScreenCTM();
+  if (ctm) {
+    return pt.matrixTransform(ctm.inverse());
+  }
+  return { x: clientX, y: clientY };
 }
 
 // Create SVG element with namespace
