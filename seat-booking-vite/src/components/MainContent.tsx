@@ -52,6 +52,32 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     startSeatDrag,
     updateSeatDrag,
     stopSeatDrag,
+
+    // Pen Tool
+    penMode,
+    currentPenPath,
+    selectedPenPath,
+    finishedPenPaths,
+    penDragging,
+    isPathDragging,
+    startPenPath,
+    addPenPoint,
+    finishPenPath,
+    selectPenPath,
+    deselectPenPath,
+    startPenDrag,
+    updatePenDrag,
+    stopPenDrag,
+    startPathDrag,
+    updatePathDrag,
+    stopPathDrag,
+    deletePenPath,
+    rotatePenPath,
+    updatePenPathStroke,
+    updatePenPathStrokeWidth,
+    removePenPoint,
+    checkPenPathSnap,
+    clearPenPreview,
   } = useSeatStore();
 
   const {
@@ -69,11 +95,30 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       if (mode === 'admin' && e.key === 'Escape') {
         selectDesignerSeat(null);
       }
+
+      if (mode === 'admin') {
+        // Pen tool shortcuts
+        if (penMode && currentPenPath) {
+          if (e.key === 'Backspace' || e.key === 'Delete' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) {
+            e.preventDefault();
+            removePenPoint();
+          }
+        }
+        // Rotate selected pen path
+        if (selectedPenPath) {
+          if (e.key === 'ArrowLeft') {
+            rotatePenPath(selectedPenPath, -45);
+          }
+          if (e.key === 'ArrowRight') {
+            rotatePenPath(selectedPenPath, 45);
+          }
+        }
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [mode, selectedDesignerSeat, deleteSelectedSeat, selectDesignerSeat]);
+  }, [mode, selectedDesignerSeat, deleteSelectedSeat, selectDesignerSeat, penMode, currentPenPath, selectedPenPath]);
 
   // Global drag handlers 
   useEffect(() => {
@@ -81,11 +126,35 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       if (isDragging && dragTarget) {
         updateSeatDrag(e.clientX, e.clientY);
       }
+      if (!svgRef.current) return;
+
+      // Pen tool anchor/handle dragging
+      if (penDragging && (currentPenPath || selectedPenPath)) {
+        updatePenDrag(svgRef.current, e.clientX, e.clientY, e.shiftKey, e.altKey);
+        return;
+      }
+
+      // Path dragging
+      if (isPathDragging && selectedPenPath) {
+        updatePathDrag(svgRef.current, e.clientX, e.clientY);
+        return;
+      }
+
+      // Pen tool preview
+      if (penMode && !penDragging && currentPenPath) {
+        checkPenPathSnap(svgRef.current, e.clientX, e.clientY);
+      }
     };
 
     const handleGlobalMouseUp = () => {
       if (isDragging) {
         stopSeatDrag();
+      }
+      if (penDragging) {
+        stopPenDrag();
+      }
+      if (isPathDragging) {
+        stopPathDrag();
       }
     };
 
@@ -94,11 +163,16 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       document.addEventListener('mouseup', handleGlobalMouseUp);
     }
 
+    if (penDragging || isPathDragging || (penMode && currentPenPath)) {
+      document.addEventListener('mousemove', handleGlobalMouseMove);
+      document.addEventListener('mouseup', handleGlobalMouseUp);
+    }
+
     return () => {
       document.removeEventListener('mousemove', handleGlobalMouseMove);
       document.removeEventListener('mouseup', handleGlobalMouseUp);
     };
-  }, [isDragging, dragTarget, updateSeatDrag, stopSeatDrag]);
+  }, [isDragging, dragTarget, updateSeatDrag, stopSeatDrag, penDragging, isPathDragging, penMode, currentPenPath, selectedPenPath, updatePenDrag, stopPenDrag, updatePathDrag, stopPathDrag, checkPenPathSnap]);
 
   // Generate next available seat ID (Phase 4)
   const getNextAvailableSeatId = useCallback((): string => {
@@ -133,6 +207,30 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     return { x: clientX, y: clientY };
   }, []);
 
+  const handlePenElementClick = useCallback((e: React.MouseEvent, elementType: 'anchor' | 'handleIn' | 'handleOut', point: any) => {
+    if (!svgRef.current) return;
+    e.stopPropagation();
+
+    // Only handle existing path editing (not new point creation)
+    if (selectedPenPath) {
+      const svgCoords = getSVGCoords(e.clientX, e.clientY);
+      let offsetX = 0, offsetY = 0;
+
+      if (elementType === 'anchor') {
+        offsetX = svgCoords.x - point.x;
+        offsetY = svgCoords.y - point.y;
+      } else if (elementType === 'handleIn' && point.handleIn) {
+        offsetX = svgCoords.x - point.handleIn.x;
+        offsetY = svgCoords.y - point.handleIn.y;
+      } else if (elementType === 'handleOut' && point.handleOut) {
+        offsetX = svgCoords.x - point.handleOut.x;
+        offsetY = svgCoords.y - point.handleOut.y;
+      }
+
+      startPenDrag(point, elementType, offsetX, offsetY);
+    }
+  }, [selectedPenPath, getSVGCoords, startPenDrag]);
+
   // Main seat click handler
   const handleSeatClick = useCallback((seatId: string, event: React.MouseEvent) => {
     event.stopPropagation();
@@ -156,7 +254,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     }
   }, [mode, selectDesignerSeat, currentSeats, selectedSeats, maxSelectableSeats, toggleSeatSelection]);
 
-  // SVG canvas click handler (Phase 4: Add Seat)
+  // SVG canvas click handler 
   const handleSVGClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     // Only handle clicks on the SVG background itself
     if (e.target !== svgRef.current) return;
@@ -186,13 +284,42 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
 
       console.log('Added new seat:', seatId, 'at', svgCoords.x, svgCoords.y);
     } else if (mode === 'admin') {
+      if (penMode) {
+        if (!svgRef.current) return;
+
+        // Check if we're closing a path by clicking first point
+        if (currentPenPath && currentPenPath.points.length > 1) {
+          const firstPt = currentPenPath.points[0];
+          const svgCoords = getSVGCoords(e.clientX, e.clientY);
+          if (Math.hypot(svgCoords.x - firstPt.x, svgCoords.y - firstPt.y) < 12) {
+            finishPenPath(true);
+            return;
+          }
+        }
+
+        clearPenPreview();
+
+        // Add new point
+        if (currentPenPath) {
+          addPenPoint(svgRef.current, e.clientX, e.clientY, e.shiftKey);
+        } else {
+          startPenPath(svgRef.current, e.clientX, e.clientY, e.shiftKey);
+        }
+        return;
+      }
+
+      // Deselect pen path on empty click
+      if (selectedPenPath) {
+        deselectPenPath();
+      }
+
       // Click on empty space deselects current seat
       selectDesignerSeat(null);
     }
-  }, [mode, addMode, getSVGCoords, getNextAvailableSeatId, addSeat, selectDesignerSeat]);
+  }, [mode, addMode, getSVGCoords, getNextAvailableSeatId, addSeat, selectDesignerSeat, penMode, currentPenPath, selectedPenPath, clearPenPreview, finishPenPath, addPenPoint, startPenPath, deselectPenPath]);
 
-  // Mouse down handler for panning (but not when dragging seats)
-  const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    // Regular panning logic only
     if (e.target === svgRef.current && !isDragging) {
       startPanning(mode === 'admin', e.clientX, e.clientY);
     }
@@ -200,10 +327,30 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
 
   // Mouse move handler for panning (but not when dragging seats)
   const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return;
+
+    // Pen tool preview lines (like vanilla)
+    if (penMode && currentPenPath && !penDragging) {
+      checkPenPathSnap(svgRef.current, e.clientX, e.clientY);
+    }
+
+    // Handle pen dragging
+    if (penDragging) {
+      updatePenDrag(svgRef.current, e.clientX, e.clientY, e.shiftKey, e.altKey);
+      return;
+    }
+
     if (!isDragging && (isPanning || isDesignerPanning)) {
       updatePan(mode === 'admin', e.clientX, e.clientY);
     }
   }, [mode, isPanning, isDesignerPanning, updatePan, isDragging]);
+
+  const handleMouseLeave = useCallback(() => {
+    // Clear pen preview on mouse leave (like vanilla)
+    if (penMode) {
+      clearPenPreview();
+    }
+  }, [penMode, clearPenPreview]);
 
   // Mouse up handler
   const handleMouseUp = useCallback(() => {
@@ -304,6 +451,15 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
 
         addSeat(newSeat);
         selectDesignerSeat(seatId);
+      } else if (mode === 'admin') {
+        // Handle pen tool touch
+        if (penMode && svgRef.current) {
+          if (currentPenPath) {
+            addPenPoint(svgRef.current, touch.clientX, touch.clientY, false);
+          } else {
+            startPenPath(svgRef.current, touch.clientX, touch.clientY, false);
+          }
+        }
       }
     }
 
@@ -321,8 +477,13 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
   // Get cursor style based on current state
   const getCursor = () => {
     if (isDragging) return 'grabbing';
+    if (penDragging) return 'grabbing';
+    if (isPathDragging) return 'grabbing';
     if (isPanning || isDesignerPanning) return 'grabbing';
-    if (mode === 'admin' && addMode) return 'crosshair';
+    if (mode === 'admin') {
+      if (penMode) return 'crosshair';
+      if (addMode) return 'crosshair';
+    }
     return 'grab';
   };
 
@@ -333,7 +494,10 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
           <h2>
             {mode === 'admin' ? 'Layout Designer' : 'Seat Selection'}
             {mode === 'admin' && addMode && <span className="tool-indicator"> - Add Seat Mode</span>}
+            {mode === 'admin' && penMode && <span className="tool-indicator"> - Pen Tool Mode</span>}
             {mode === 'admin' && isDragging && <span className="tool-indicator"> - Dragging Seat</span>}
+            {mode === 'admin' && penDragging && <span className="tool-indicator"> - Dragging Handle</span>}
+            {mode === 'admin' && isPathDragging && <span className="tool-indicator"> - Dragging Path</span>}
           </h2>
           <ZoomControls mode={mode} />
         </div>
@@ -346,7 +510,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
             height="600"
             viewBox={getViewBox()}
             style={{
-              cursor: getCursor(), 
+              cursor: getCursor(),
               background: 'white',
               minWidth: '600px',
               minHeight: '400px'
@@ -356,7 +520,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onMouseLeave={handleMouseUp}
+            onMouseLeave={handleMouseLeave}
             onClick={handleSVGClick}
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}

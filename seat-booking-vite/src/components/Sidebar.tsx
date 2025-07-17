@@ -23,6 +23,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     rectMode,
     shapeMode,
     toggleMode,
+    togglePenMode,
     setShapeMode,
     generateGrid,
     clearAll,
@@ -199,7 +200,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
 
               <button
                 className={`tool-btn ${penMode ? 'active' : ''}`}
-                onClick={() => toggleMode('penMode')}
+                onClick={() => togglePenMode()}
                 title="Pen Tool - Draw Bezier Curves"
               >
                 <span className="tool-icon">✏️</span>
