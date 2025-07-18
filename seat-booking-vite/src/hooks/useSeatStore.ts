@@ -357,12 +357,6 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
     currentPenPath.points.push(newPt);
 
-    // 🎯 KEY FIX: IMMEDIATELY start handle creation drag (like vanilla)
-    newPt._dragStart = { x: svgCoords.x, y: svgCoords.y };
-    set({
-      penDragging: { point: newPt, type: 'handleOut', offsetX: 0, offsetY: 0 }
-    });
-
     get().updatePenPath(currentPenPath, false);
   },
 
@@ -438,25 +432,29 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   ) => {
     const { penDragging, currentPenPath, selectedPenPath } = get();
     if (!penDragging) return;
-
+  
+    // Clear preview while dragging handles
+    get().clearPenPreview();
+  
     const pathObj = currentPenPath || selectedPenPath;
     if (!pathObj) return;
-
+  
     const svgCoords = getSVGCoordsFromClient(svg, clientX, clientY);
     const pt = penDragging.point;
-
+  
+    // ... rest of your existing updatePenDrag code stays exactly the same
     if (penDragging.type === "anchor") {
       const oldX = pt.x;
       const oldY = pt.y;
       
       pt.x = svgCoords.x - penDragging.offsetX;
       pt.y = svgCoords.y - penDragging.offsetY;
-
+  
       pt.anchorCircle?.setAttribute("cx", pt.x.toString());
       pt.anchorCircle?.setAttribute("cy", pt.y.toString());
       pt.anchorDot?.setAttribute("cx", pt.x.toString());
       pt.anchorDot?.setAttribute("cy", pt.y.toString());
-
+  
       // Move handles with the anchor
       const dx = pt.x - oldX;
       const dy = pt.y - oldY;
@@ -472,7 +470,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     } else if (penDragging.type === "handleIn") {
       let x = svgCoords.x - penDragging.offsetX;
       let y = svgCoords.y - penDragging.offsetY;
-
+  
       if (shiftKey) {
         const dx = x - pt.x;
         const dy = y - pt.y;
@@ -482,9 +480,9 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         x = pt.x + Math.cos(snapAngle) * length;
         y = pt.y + Math.sin(snapAngle) * length;
       }
-
+  
       pt.handleIn = { x, y };
-
+  
       if (!altKey) {
         const dx = pt.x - pt.handleIn.x;
         const dy = pt.y - pt.handleIn.y;
@@ -493,7 +491,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     } else if (penDragging.type === "handleOut") {
       let x = svgCoords.x - penDragging.offsetX;
       let y = svgCoords.y - penDragging.offsetY;
-
+  
       if (shiftKey) {
         const dx = x - pt.x;
         const dy = y - pt.y;
@@ -503,9 +501,9 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         x = pt.x + Math.cos(snapAngle) * length;
         y = pt.y + Math.sin(snapAngle) * length;
       }
-
+  
       pt.handleOut = { x, y };
-
+  
       // Only create opposite handle if not holding Alt key
       if (!altKey) {
         const dx = pt.x - pt.handleOut.x;
@@ -513,7 +511,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         pt.handleIn = { x: pt.x + dx, y: pt.y + dy };
       }
     }
-
+  
     get().updatePenPath(pathObj, false);
   },
 
@@ -537,6 +535,28 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     }
 
     set({ penDragging: null });
+  },
+  
+  startPenHandleFromClick: (
+    svg: SVGSVGElement,
+    clientX: number,
+    clientY: number
+  ) => {
+    const { currentPenPath } = get();
+    if (!currentPenPath || currentPenPath.points.length === 0) return false;
+  
+    const svgCoords = getSVGCoordsFromClient(svg, clientX, clientY);
+    const lastPt = currentPenPath.points[currentPenPath.points.length - 1];
+    
+    // Check if clicking on the last added point
+    const distance = Math.hypot(svgCoords.x - lastPt.x, svgCoords.y - lastPt.y);
+    if (distance < 12) {
+      // Use existing startPenDrag method
+      get().startPenDrag(lastPt, 'handleOut', 0, 0);
+      return true; // Consumed the event
+    }
+    
+    return false; // Did not consume
   },
 
   startPathDrag: (clientX: number, clientY: number) => {

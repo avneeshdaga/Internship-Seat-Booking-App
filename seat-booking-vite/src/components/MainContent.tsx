@@ -318,32 +318,38 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     }
   }, [mode, addMode, getSVGCoords, getNextAvailableSeatId, addSeat, selectDesignerSeat, penMode, currentPenPath, selectedPenPath, clearPenPreview, finishPenPath, addPenPoint, startPenPath, deselectPenPath]);
 
-   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-    // Regular panning logic only
+  const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    // Pen tool: Check if starting handle creation using existing drag system
+    if (penMode && currentPenPath && svgRef.current) {
+      const handled = startPenHandleFromClick(svgRef.current, e.clientX, e.clientY);
+      if (handled) return; // Handle creation started using existing startPenDrag
+    }
+  
+    // Your existing panning logic
     if (e.target === svgRef.current && !isDragging) {
       startPanning(mode === 'admin', e.clientX, e.clientY);
     }
-  }, [mode, startPanning, isDragging]);
+  }, [mode, startPanning, isDragging, penMode, currentPenPath, startPenHandleFromClick]);
 
-  // Mouse move handler for panning (but not when dragging seats)
-  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-    if (!svgRef.current) return;
-
-    // Pen tool preview lines (like vanilla)
-    if (penMode && currentPenPath && !penDragging) {
-      checkPenPathSnap(svgRef.current, e.clientX, e.clientY);
-    }
-
-    // Handle pen dragging
-    if (penDragging) {
-      updatePenDrag(svgRef.current, e.clientX, e.clientY, e.shiftKey, e.altKey);
-      return;
-    }
-
-    if (!isDragging && (isPanning || isDesignerPanning)) {
-      updatePan(mode === 'admin', e.clientX, e.clientY);
-    }
-  }, [mode, isPanning, isDesignerPanning, updatePan, isDragging]);
+    const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+      if (!svgRef.current) return;
+    
+      // Your existing pen dragging (already clears preview!)
+      if (penDragging) {
+        updatePenDrag(svgRef.current, e.clientX, e.clientY, e.shiftKey, e.altKey);
+        return; // Skip preview while dragging
+      }
+    
+      // Show preview lines only when NOT dragging handles
+      if (penMode && currentPenPath) {
+        checkPenPathSnap(svgRef.current, e.clientX, e.clientY);
+      }
+    
+      // Your existing pan logic
+      if (!isDragging && (isPanning || isDesignerPanning)) {
+        updatePan(mode === 'admin', e.clientX, e.clientY);
+      }
+    }, [mode, isPanning, isDesignerPanning, updatePan, isDragging, penMode, currentPenPath, checkPenPathSnap]);
 
   const handleMouseLeave = useCallback(() => {
     // Clear pen preview on mouse leave (like vanilla)
@@ -565,4 +571,39 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
   );
 };
 
+function startPenHandleFromClick(current: SVGSVGElement, clientX: number, clientY: number) {
+  // Try to find if the click is near the last anchor point of the current pen path
+  // If so, start dragging a handle (handleOut) for that anchor
+
+  // You need access to currentPenPath and startPenDrag from the closure
+  // We'll assume these are available via useSeatStore (like other handlers)
+  // So, get them from the store:
+  const { currentPenPath, startPenDrag } = useSeatStore.getState?.() || {};
+
+  if (!currentPenPath || !startPenDrag) return false;
+
+  // Find the last point in the current path
+  const lastPoint = currentPenPath.points[currentPenPath.points.length - 1];
+  if (!lastPoint) return false;
+
+  // Convert click to SVG coordinates
+  const pt = current.createSVGPoint();
+  pt.x = clientX;
+  pt.y = clientY;
+  const ctm = current.getScreenCTM();
+  if (!ctm) return false;
+  const svgCoords = pt.matrixTransform(ctm.inverse());
+
+  // Check if click is close to the anchor
+  const dist = Math.hypot(svgCoords.x - lastPoint.x, svgCoords.y - lastPoint.y);
+  if (dist < 16) {
+    // Start dragging handleOut for this anchor
+    startPenDrag(lastPoint, 'handleOut', 0, 0);
+    return true;
+  }
+
+  return false;
+}
+
 export default MainContent;
+
