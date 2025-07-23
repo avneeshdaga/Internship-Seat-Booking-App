@@ -42,6 +42,11 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     updateSeatId,
     updateSeatRadius,
     clearGrid,
+    selectedPenPath,
+    updatePenPathStroke,
+    updatePenPathStrokeWidth,
+    rotatePenPath,
+    deletePenPath,
   } = useSeatStore();
 
   // Local state for grid inputs (EXACT from React)
@@ -59,11 +64,68 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
 
   // NEW: Update seat ID state when selection changes
   React.useEffect(() => {
+    if (selectedPenPath) {
+      // Get current stroke width
+      const currentWidth = selectedPenPath.path.getAttribute('stroke-width') || '2';
+      setStrokeWidth(parseInt(currentWidth));
+
+      // Get current stroke color (from data-prev-stroke to get actual color)
+      const currentColor = selectedPenPath.path.getAttribute('data-prev-stroke') || '#000000';
+      setStrokeColor(currentColor);
+    }
+
     if (selectedDesignerSeat) {
       setNewSeatId(selectedDesignerSeat);
       setSeatIdError('');
     }
-  }, [selectedDesignerSeat]);
+  }, [selectedDesignerSeat, selectedPenPath]);
+
+  const handleRotateLeft = () => {
+    if (selectedPenPath) {
+      rotatePenPath(selectedPenPath, -45);
+    }
+  };
+
+  const handleRotateRight = () => {
+    if (selectedPenPath) {
+      rotatePenPath(selectedPenPath, 45);
+    }
+  };
+
+  const handleFlipHorizontal = () => {
+    if (selectedPenPath) {
+      rotatePenPath(selectedPenPath, 90);
+    }
+  };
+
+  const handleDeletePath = () => {
+    if (selectedPenPath) {
+      const confirmDelete = confirm('Are you sure you want to delete this path?');
+      if (confirmDelete) {
+        deletePenPath(selectedPenPath);
+      }
+    }
+  };
+
+  // Handle stroke width change
+  const handleStrokeWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newWidth = parseInt(e.target.value);
+    setStrokeWidth(newWidth);
+
+    if (selectedPenPath) {
+      updatePenPathStrokeWidth(selectedPenPath, newWidth);
+    }
+  };
+
+  // Handle stroke color change
+  const handleStrokeColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newColor = e.target.value;
+    setStrokeColor(newColor);
+
+    if (selectedPenPath) {
+      updatePenPathStroke(selectedPenPath, newColor);
+    }
+  };
 
   const handleClearGrid = () => {
     if (currentSeats.length === 0) {
@@ -321,52 +383,56 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
           {/* Drawing Controls - EXACT from React */}
           <div className="tool-section">
             <h3>Drawing Controls</h3>
-            <div className="control-group">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <label>Stroke Width:</label>
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  value={strokeWidth}
-                  className="slider"
-                  style={{ width: '180px' }}
-                  onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
-                />
-                <span className="range-value" style={{ fontSize: '12px' }}>{strokeWidth}</span>
-              </div>
+            {selectedPenPath ? (
+              <div className="control-group">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <label>Stroke Width:</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="10"
+                    value={strokeWidth}
+                    className="slider"
+                    style={{ width: '120px' }}
+                    onChange={handleStrokeWidthChange}
+                  />
+                  <span className="range-value">{strokeWidth}</span>
+                </div>
 
-              <div>
-                <label>
-                  Stroke Color:
-                  <input
-                    type="color"
-                    value={strokeColor}
-                    className="color-input"
-                    onChange={(e) => setStrokeColor(e.target.value)}
-                  />
-                </label>
-                <label>
-                  Fill Color:
-                  <input
-                    type="color"
-                    defaultValue="#ffffff"
-                    className="color-input"
-                  />
-                </label>
+                <div>
+                  <label>
+                    Stroke Color:
+                    <input
+                      type="color"
+                      value={strokeColor}
+                      className="color-input"
+                      onChange={handleStrokeColorChange}
+                    />
+                  </label>
+                </div>
               </div>
-            </div>
+            ) : (
+              <p style={{ color: '#666', fontStyle: 'italic' }}>
+                Select a path to edit its properties
+              </p>
+            )}
           </div>
 
           {/* Transform Tools - EXACT from React */}
           <div className="tool-section">
             <h3>Transform</h3>
-            <div className="button-group">
-              <button className="secondary-btn">↻ Rotate Left</button>
-              <button className="secondary-btn">↺ Rotate Right</button>
-              <button className="secondary-btn">🔄 Flip Horizontal</button>
-              <button className="secondary-btn">🔄 Flip Vertical</button>
-            </div>
+            {selectedPenPath ? (
+              <div className="button-group">
+                <button className="secondary-btn" onClick={handleRotateLeft}>↻ Rotate Left</button>
+                <button className="secondary-btn" onClick={handleRotateRight}>↺ Rotate Right</button>
+                <button className="secondary-btn" onClick={handleDeletePath}>🗑️ Delete Path</button>
+                <button className="secondary-btn" onClick={handleFlipHorizontal}>🔄 Flip 90°</button>
+              </div>
+            ) : (
+              <p style={{ color: '#666', fontStyle: 'italic' }}>
+                Select a path to access transform tools
+              </p>
+            )}
           </div>
 
           {/* Background - EXACT from React */}

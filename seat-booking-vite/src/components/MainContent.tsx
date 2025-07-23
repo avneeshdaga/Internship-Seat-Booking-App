@@ -560,7 +560,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
           ) : (
             <div className="admin-help">
               <p>🛠️ <strong>Admin Mode:</strong> Click seats to select, drag to move, use controls to zoom</p>
-              <p>⌨️ <strong>Shortcuts:</strong> Delete key to remove selected seat, Escape to deselect</p>
+              <p>⌨️ <strong>Shortcuts:</strong> Delete key to remove selected seat, Escape to deselect, Arrow keys to rotate selected path</p>
             </div>
           )}
         </div>

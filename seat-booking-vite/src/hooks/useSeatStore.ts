@@ -707,8 +707,20 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   },
 
   updatePenPathStroke: (path: PenPath, color: string) => {
-    path.path.setAttribute("stroke", color);
+    if (!path || !path.path) return;
+
+    // Always store the new color as the "actual" color
     path.path.setAttribute("data-prev-stroke", color);
+
+    // If this path is currently selected, keep it red visually
+    const { selectedPenPath } = get();
+    if (selectedPenPath === path) {
+      // Keep selection color (red) but store the actual color
+      path.path.setAttribute("stroke", "#f44336");
+    } else {
+      // Apply the new color immediately if not selected
+      path.path.setAttribute("stroke", color);
+    }
   },
 
   updatePenPathStrokeWidth: (path: PenPath, width: number) => {
