@@ -264,6 +264,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     path.setAttribute("stroke", "#000");
     path.setAttribute("stroke-width", "2");
     path.setAttribute("fill", "none");
+    path.setAttribute("data-prev-stroke", "#000");
     svg.appendChild(path);
 
     const newPath: PenPath = {
@@ -300,7 +301,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
     newPath.points.push(newPt);
 
-    set({ currentPenPath: newPath,});
+    set({ currentPenPath: newPath });
     get().updatePenPath(newPath, false);
   },
 
@@ -368,6 +369,16 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       currentPenPath.closed = true;
     }
 
+    const firstPt = currentPenPath.points[0];
+    if (firstPt && firstPt.anchorCircle) {
+      firstPt.anchorCircle.setAttribute("fill", "rgba(0,0,0,0)");
+    }
+
+    const currentStroke = currentPenPath.path.getAttribute("stroke") || "#000";
+    if (!currentPenPath.path.getAttribute("data-prev-stroke")) {
+      currentPenPath.path.setAttribute("data-prev-stroke", currentStroke);
+    }
+
     // Make path clickable
     currentPenPath.path.style.cursor = "pointer";
     currentPenPath.path.addEventListener("click", (e) => {
@@ -389,12 +400,21 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     const { selectedPenPath } = get();
 
     if (selectedPenPath && selectedPenPath !== path) {
+      const prevStroke =
+        selectedPenPath.path.getAttribute("data-prev-stroke") || "#000";
+      selectedPenPath.path.setAttribute("stroke", prevStroke);
       get().updatePenPath(selectedPenPath, true);
     }
 
     set({ selectedPenPath: path });
 
     if (path) {
+      const currentStroke = path.path.getAttribute("stroke") || "#000";
+      if (!path.path.getAttribute("data-prev-stroke")) {
+        path.path.setAttribute("data-prev-stroke", currentStroke);
+      }
+      // Set to red for selection
+      path.path.setAttribute("stroke", "#f44336");
       get().updatePenPath(path, false);
     }
   },
@@ -402,9 +422,16 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   deselectPenPath: () => {
     const { selectedPenPath } = get();
     if (selectedPenPath) {
+      const prevStroke =
+        selectedPenPath.path.getAttribute("data-prev-stroke") || "#000";
+      selectedPenPath.path.setAttribute("stroke", prevStroke);
+
+      // Hide handles by calling updatePenPath after setting selectedPenPath to null
+      set({ selectedPenPath: null });
       get().updatePenPath(selectedPenPath, true);
+    } else {
+      set({ selectedPenPath: null });
     }
-    set({ selectedPenPath: null });
   },
 
   startPenDrag: (
@@ -417,7 +444,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     if (!point._dragStart) {
       point._dragStart = { x: point.x, y: point.y };
     }
-    
+
     set({
       penDragging: { point, type, offsetX, offsetY },
     });
@@ -432,33 +459,33 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   ) => {
     const { penDragging, currentPenPath, selectedPenPath } = get();
     if (!penDragging) return;
-  
+
     // Clear preview while dragging handles
     get().clearPenPreview();
-  
+
     const pathObj = currentPenPath || selectedPenPath;
     if (!pathObj) return;
-  
+
     const svgCoords = getSVGCoordsFromClient(svg, clientX, clientY);
     const pt = penDragging.point;
-  
+
     // ... rest of your existing updatePenDrag code stays exactly the same
     if (penDragging.type === "anchor") {
       const oldX = pt.x;
       const oldY = pt.y;
-      
+
       pt.x = svgCoords.x - penDragging.offsetX;
       pt.y = svgCoords.y - penDragging.offsetY;
-  
+
       pt.anchorCircle?.setAttribute("cx", pt.x.toString());
       pt.anchorCircle?.setAttribute("cy", pt.y.toString());
       pt.anchorDot?.setAttribute("cx", pt.x.toString());
       pt.anchorDot?.setAttribute("cy", pt.y.toString());
-  
+
       // Move handles with the anchor
       const dx = pt.x - oldX;
       const dy = pt.y - oldY;
-      
+
       if (pt.handleIn) {
         pt.handleIn.x += dx;
         pt.handleIn.y += dy;
@@ -470,7 +497,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     } else if (penDragging.type === "handleIn") {
       let x = svgCoords.x - penDragging.offsetX;
       let y = svgCoords.y - penDragging.offsetY;
-  
+
       if (shiftKey) {
         const dx = x - pt.x;
         const dy = y - pt.y;
@@ -480,9 +507,9 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         x = pt.x + Math.cos(snapAngle) * length;
         y = pt.y + Math.sin(snapAngle) * length;
       }
-  
+
       pt.handleIn = { x, y };
-  
+
       if (!altKey) {
         const dx = pt.x - pt.handleIn.x;
         const dy = pt.y - pt.handleIn.y;
@@ -491,7 +518,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     } else if (penDragging.type === "handleOut") {
       let x = svgCoords.x - penDragging.offsetX;
       let y = svgCoords.y - penDragging.offsetY;
-  
+
       if (shiftKey) {
         const dx = x - pt.x;
         const dy = y - pt.y;
@@ -501,9 +528,9 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         x = pt.x + Math.cos(snapAngle) * length;
         y = pt.y + Math.sin(snapAngle) * length;
       }
-  
+
       pt.handleOut = { x, y };
-  
+
       // Only create opposite handle if not holding Alt key
       if (!altKey) {
         const dx = pt.x - pt.handleOut.x;
@@ -511,7 +538,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         pt.handleIn = { x: pt.x + dx, y: pt.y + dy };
       }
     }
-  
+
     get().updatePenPath(pathObj, false);
   },
 
@@ -536,7 +563,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
     set({ penDragging: null });
   },
-  
+
   startPenHandleFromClick: (
     svg: SVGSVGElement,
     clientX: number,
@@ -544,35 +571,75 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   ) => {
     const { currentPenPath } = get();
     if (!currentPenPath || currentPenPath.points.length === 0) return false;
-  
+
     const svgCoords = getSVGCoordsFromClient(svg, clientX, clientY);
     const lastPt = currentPenPath.points[currentPenPath.points.length - 1];
-    
+
     // Check if clicking on the last added point
     const distance = Math.hypot(svgCoords.x - lastPt.x, svgCoords.y - lastPt.y);
     if (distance < 12) {
       // Use existing startPenDrag method
-      get().startPenDrag(lastPt, 'handleOut', 0, 0);
+      get().startPenDrag(lastPt, "handleOut", 0, 0);
       return true; // Consumed the event
     }
-    
+
     return false; // Did not consume
   },
 
   startPathDrag: (clientX: number, clientY: number) => {
-    set({ isPathDragging: true });
+    const { selectedPenPath } = get();
+    if (!selectedPenPath) return;
+
+    set({
+      isPathDragging: true,
+      dragStart: { x: clientX, y: clientY, seatX: 0, seatY: 0 },
+    });
   },
 
   updatePathDrag: (svg: SVGSVGElement, clientX: number, clientY: number) => {
-    const { selectedPenPath, isPathDragging } = get();
-    if (!isPathDragging || !selectedPenPath) return;
+    const { selectedPenPath, isPathDragging, dragStart } = get();
+    if (!isPathDragging || !selectedPenPath || !dragStart) return;
 
-    // Path dragging logic would go here
+    // Calculate movement delta
+    const currentCoords = getSVGCoordsFromClient(svg, clientX, clientY);
+    const startCoords = getSVGCoordsFromClient(svg, dragStart.x, dragStart.y);
+    const dx = currentCoords.x - startCoords.x;
+    const dy = currentCoords.y - startCoords.y;
+
+    // Move all points and handles
+    selectedPenPath.points.forEach((pt) => {
+      pt.x += dx;
+      pt.y += dy;
+
+      // Update anchor visual elements
+      pt.anchorCircle?.setAttribute("cx", pt.x.toString());
+      pt.anchorCircle?.setAttribute("cy", pt.y.toString());
+      pt.anchorDot?.setAttribute("cx", pt.x.toString());
+      pt.anchorDot?.setAttribute("cy", pt.y.toString());
+
+      // Move handles
+      if (pt.handleIn) {
+        pt.handleIn.x += dx;
+        pt.handleIn.y += dy;
+      }
+      if (pt.handleOut) {
+        pt.handleOut.x += dx;
+        pt.handleOut.y += dy;
+      }
+    });
+
+    // Update drag start position for next frame
+    set({ dragStart: { x: clientX, y: clientY, seatX: 0, seatY: 0 } });
+
+    // Redraw the path with updated coordinates
     get().updatePenPath(selectedPenPath, false);
   },
 
   stopPathDrag: () => {
-    set({ isPathDragging: false });
+    set({
+      isPathDragging: false,
+      dragStart: null,
+    });
   },
 
   deletePenPath: (path: PenPath) => {
@@ -676,15 +743,15 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
     const svgCoords = getSVGCoordsFromClient(svg, clientX, clientY);
     const lastPt = currentPenPath.points[currentPenPath.points.length - 1];
-    
+
     // Remove existing preview
     penPreviewLine?.remove();
     penPreviewHandle?.remove();
-    
+
     // Create shift-constrained coordinates if needed
     let previewX = svgCoords.x;
     let previewY = svgCoords.y;
-    
+
     // Check for shift key constraint
     const shiftKey = (window.event as any)?.shiftKey || false;
     if (shiftKey) {
@@ -696,39 +763,45 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       previewX = lastPt.x + Math.cos(snapAngle) * length;
       previewY = lastPt.y + Math.sin(snapAngle) * length;
     }
-    
+
     // Create handle preview line if last point has handleOut
     if (lastPt.handleOut) {
-      const newPenPreviewHandle = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      newPenPreviewHandle.setAttribute('x1', lastPt.x.toString());
-      newPenPreviewHandle.setAttribute('y1', lastPt.y.toString());
-      newPenPreviewHandle.setAttribute('x2', lastPt.handleOut.x.toString());
-      newPenPreviewHandle.setAttribute('y2', lastPt.handleOut.y.toString());
-      newPenPreviewHandle.setAttribute('stroke', '#bbb');
-      newPenPreviewHandle.setAttribute('stroke-dasharray', '2,2');
+      const newPenPreviewHandle = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "line"
+      );
+      newPenPreviewHandle.setAttribute("x1", lastPt.x.toString());
+      newPenPreviewHandle.setAttribute("y1", lastPt.y.toString());
+      newPenPreviewHandle.setAttribute("x2", lastPt.handleOut.x.toString());
+      newPenPreviewHandle.setAttribute("y2", lastPt.handleOut.y.toString());
+      newPenPreviewHandle.setAttribute("stroke", "#bbb");
+      newPenPreviewHandle.setAttribute("stroke-dasharray", "2,2");
       svg.appendChild(newPenPreviewHandle);
       set({ penPreviewHandle: newPenPreviewHandle });
     }
-    
+
     // Create main preview line
-    const newPenPreviewLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    newPenPreviewLine.setAttribute('x1', lastPt.x.toString());
-    newPenPreviewLine.setAttribute('y1', lastPt.y.toString());
-    newPenPreviewLine.setAttribute('x2', previewX.toString());
-    newPenPreviewLine.setAttribute('y2', previewY.toString());
-    newPenPreviewLine.setAttribute('stroke', '#2196f3'); // Blue like vanilla
-    newPenPreviewLine.setAttribute('stroke-dasharray', '4,2');
+    const newPenPreviewLine = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "line"
+    );
+    newPenPreviewLine.setAttribute("x1", lastPt.x.toString());
+    newPenPreviewLine.setAttribute("y1", lastPt.y.toString());
+    newPenPreviewLine.setAttribute("x2", previewX.toString());
+    newPenPreviewLine.setAttribute("y2", previewY.toString());
+    newPenPreviewLine.setAttribute("stroke", "#2196f3"); // Blue like vanilla
+    newPenPreviewLine.setAttribute("stroke-dasharray", "4,2");
     svg.appendChild(newPenPreviewLine);
     set({ penPreviewLine: newPenPreviewLine });
-    
+
     // Snap highlight for first point (path closing)
     const firstPt = currentPenPath.points[0];
     if (firstPt && currentPenPath.points.length > 1) {
       const distance = Math.hypot(previewX - firstPt.x, previewY - firstPt.y);
       if (distance < 12) {
-        firstPt.anchorCircle?.setAttribute('fill', '#f44336'); // Red when close
+        firstPt.anchorCircle?.setAttribute("fill", "#f44336"); // Red when close
       } else {
-        firstPt.anchorCircle?.setAttribute('fill', 'rgba(0,0,0,0)'); // Transparent normal
+        firstPt.anchorCircle?.setAttribute("fill", "rgba(0,0,0,0)"); // Transparent normal
       }
     }
   },
@@ -749,10 +822,17 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       pt.handleOutCircle?.remove();
     });
 
-    // Recreate handles if not hiding
-    if (!hideHandles) {
+    // Show handles if: 1) Not explicitly hiding AND 2) Path is selected OR currently being created
+    const { selectedPenPath, currentPenPath } = get();
+    const showHandles =
+      !hideHandles &&
+      (pathObj === selectedPenPath || pathObj === currentPenPath);
+
+    if (showHandles) {
       pathObj.points.forEach((pt) => {
+        // Create handle lines and circles with proper event handlers
         if (pt.handleIn) {
+          // Handle line (grey dashed)
           pt.handleLineIn = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "line"
@@ -762,22 +842,40 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           pt.handleLineIn.setAttribute("x2", pt.handleIn.x.toString());
           pt.handleLineIn.setAttribute("y2", pt.handleIn.y.toString());
           pt.handleLineIn.setAttribute("stroke", "#bbb");
-          pt.handleLineIn.setAttribute("stroke-dasharray", "2,2");
+          pt.handleLineIn.setAttribute("stroke-width", "1");
+          pt.handleLineIn.setAttribute("stroke-dasharray", "3,3");
+          pt.handleLineIn.style.pointerEvents = "none";
           pathObj.path.parentNode?.appendChild(pt.handleLineIn);
 
+          // Handle circle with drag events
           pt.handleInCircle = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "circle"
           );
           pt.handleInCircle.setAttribute("cx", pt.handleIn.x.toString());
           pt.handleInCircle.setAttribute("cy", pt.handleIn.y.toString());
-          pt.handleInCircle.setAttribute("r", "3");
+          pt.handleInCircle.setAttribute("r", "4");
           pt.handleInCircle.setAttribute("fill", "#ff9800");
+          pt.handleInCircle.setAttribute("stroke", "#fff");
+          pt.handleInCircle.setAttribute("stroke-width", "1");
           pt.handleInCircle.style.cursor = "pointer";
+
+          // Add drag event handlers only for finished paths
+          if (pathObj === selectedPenPath) {
+            pt.handleInCircle.addEventListener("mousedown", (e) => {
+              e.stopPropagation();
+              const rect = pt.handleInCircle!.getBoundingClientRect();
+              const offsetX = e.clientX - rect.left - rect.width / 2;
+              const offsetY = e.clientY - rect.top - rect.height / 2;
+              get().startPenDrag(pt, "handleIn", offsetX, offsetY);
+            });
+          }
+
           pathObj.path.parentNode?.appendChild(pt.handleInCircle);
         }
 
         if (pt.handleOut) {
+          // Handle line (grey dashed)
           pt.handleLineOut = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "line"
@@ -787,24 +885,63 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           pt.handleLineOut.setAttribute("x2", pt.handleOut.x.toString());
           pt.handleLineOut.setAttribute("y2", pt.handleOut.y.toString());
           pt.handleLineOut.setAttribute("stroke", "#bbb");
-          pt.handleLineOut.setAttribute("stroke-dasharray", "2,2");
+          pt.handleLineOut.setAttribute("stroke-width", "1");
+          pt.handleLineOut.setAttribute("stroke-dasharray", "3,3");
+          pt.handleLineOut.style.pointerEvents = "none";
           pathObj.path.parentNode?.appendChild(pt.handleLineOut);
 
+          // Handle circle with drag events
           pt.handleOutCircle = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "circle"
           );
           pt.handleOutCircle.setAttribute("cx", pt.handleOut.x.toString());
           pt.handleOutCircle.setAttribute("cy", pt.handleOut.y.toString());
-          pt.handleOutCircle.setAttribute("r", "3");
+          pt.handleOutCircle.setAttribute("r", "4");
           pt.handleOutCircle.setAttribute("fill", "#ff9800");
+          pt.handleOutCircle.setAttribute("stroke", "#fff");
+          pt.handleOutCircle.setAttribute("stroke-width", "1");
           pt.handleOutCircle.style.cursor = "pointer";
+
+          // Add drag event handlers only for finished paths
+          if (pathObj === selectedPenPath) {
+            pt.handleOutCircle.addEventListener("mousedown", (e) => {
+              e.stopPropagation();
+              const rect = pt.handleOutCircle!.getBoundingClientRect();
+              const offsetX = e.clientX - rect.left - rect.width / 2;
+              const offsetY = e.clientY - rect.top - rect.height / 2;
+              get().startPenDrag(pt, "handleOut", offsetX, offsetY);
+            });
+          }
+
           pathObj.path.parentNode?.appendChild(pt.handleOutCircle);
         }
+
+        // Make anchor points draggable (only for finished paths)
+        if (pt.anchorCircle && pathObj === selectedPenPath) {
+          pt.anchorCircle.addEventListener("mousedown", (e) => {
+            e.stopPropagation();
+            const rect = pt.anchorCircle!.getBoundingClientRect();
+            const offsetX = e.clientX - rect.left - rect.width / 2;
+            const offsetY = e.clientY - rect.top - rect.height / 2;
+            get().startPenDrag(pt, "anchor", offsetX, offsetY);
+          });
+        }
       });
+
+      // Make the path itself draggable for moving the entire path (only for finished paths)
+      if (pathObj === selectedPenPath) {
+        pathObj.path.addEventListener("mousedown", (e) => {
+          // Only start path drag if not clicking on handles or anchors
+          if (e.target === pathObj.path) {
+            e.stopPropagation();
+            get().startPathDrag(e.clientX, e.clientY);
+          }
+        });
+      }
     }
 
-    // Build path string
+    // Build and update path string
     let d = "";
     for (let i = 0; i < pathObj.points.length; i++) {
       const pt = pathObj.points[i];
@@ -829,12 +966,12 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
     pathObj.path.setAttribute("d", d);
 
-    // Set path color
-    const { selectedPenPath } = get();
-    if (selectedPenPath && pathObj === selectedPenPath && !hideHandles) {
+    // Set path color based on selection
+    if (selectedPenPath && pathObj === selectedPenPath) {
       pathObj.path.setAttribute("stroke", "#f44336"); // Red for selected
     } else {
-      const prevStroke = pathObj.path.getAttribute("data-prev-stroke") || pathObj.path.getAttribute("stroke") || "#000";
+      const prevStroke =
+        pathObj.path.getAttribute("data-prev-stroke") || "#000";
       pathObj.path.setAttribute("stroke", prevStroke);
     }
   },

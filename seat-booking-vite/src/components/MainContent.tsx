@@ -334,7 +334,6 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
       if (!svgRef.current) return;
     
-      // Your existing pen dragging (already clears preview!)
       if (penDragging) {
         updatePenDrag(svgRef.current, e.clientX, e.clientY, e.shiftKey, e.altKey);
         return; // Skip preview while dragging
@@ -352,13 +351,12 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     }, [mode, isPanning, isDesignerPanning, updatePan, isDragging, penMode, currentPenPath, checkPenPathSnap]);
 
   const handleMouseLeave = useCallback(() => {
-    // Clear pen preview on mouse leave (like vanilla)
+    // Clear pen preview on mouse leave 
     if (penMode) {
       clearPenPreview();
     }
   }, [penMode, clearPenPreview]);
 
-  // Mouse up handler
   const handleMouseUp = useCallback(() => {
     if (!isDragging) {
       stopPanning();

@@ -53,6 +53,10 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
   const [newSeatId, setNewSeatId] = useState('');
   const [seatIdError, setSeatIdError] = useState('');
 
+  // State for stroke width
+  const [strokeWidth, setStrokeWidth] = useState(2);
+  const [strokeColor, setStrokeColor] = useState('#000000');
+
   // NEW: Update seat ID state when selection changes
   React.useEffect(() => {
     if (selectedDesignerSeat) {
@@ -239,7 +243,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
           {/* === PHASE 4: SEAT PROPERTIES === */}
           {selectedDesignerSeat && (
             <div className="tool-section">
-              <h3>Selected: {selectedDesignerSeat}</h3>
+              <h3>Seat Controls</h3>
 
               <div className="input-group">
                 <label>
@@ -318,32 +322,39 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
           <div className="tool-section">
             <h3>Drawing Controls</h3>
             <div className="control-group">
-              <label>
-                Stroke Width:
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <label>Stroke Width:</label>
                 <input
                   type="range"
                   min="1"
                   max="10"
-                  defaultValue="2"
+                  value={strokeWidth}
                   className="slider"
+                  style={{ width: '180px' }}
+                  onChange={(e) => setStrokeWidth(parseInt(e.target.value))}
                 />
-              </label>
-              <label>
-                Stroke Color:
-                <input
-                  type="color"
-                  defaultValue="#000000"
-                  className="color-input"
-                />
-              </label>
-              <label>
-                Fill Color:
-                <input
-                  type="color"
-                  defaultValue="#ffffff"
-                  className="color-input"
-                />
-              </label>
+                <span className="range-value" style={{ fontSize: '12px' }}>{strokeWidth}</span>
+              </div>
+
+              <div>
+                <label>
+                  Stroke Color:
+                  <input
+                    type="color"
+                    value={strokeColor}
+                    className="color-input"
+                    onChange={(e) => setStrokeColor(e.target.value)}
+                  />
+                </label>
+                <label>
+                  Fill Color:
+                  <input
+                    type="color"
+                    defaultValue="#ffffff"
+                    className="color-input"
+                  />
+                </label>
+              </div>
             </div>
           </div>
 
