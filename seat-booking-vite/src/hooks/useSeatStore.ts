@@ -72,6 +72,7 @@ interface SeatState {
   rectMode: boolean;
   shapeMode: ShapeMode;
   bgImageVisible: boolean;
+  isRectPathDragging: boolean;
 
   // Success feedback
   showSuccessAnimation: boolean;
@@ -186,6 +187,31 @@ interface SeatState {
   ) => void;
   clearPenPreview: () => void;
   updatePenPath: (pathObj: PenPath, hideHandles?: boolean) => void;
+  createRectangle: (
+    svg: SVGSVGElement,
+    clientX: number,
+    clientY: number
+  ) => void;
+  selectRectPath: (rectPath: SVGPathElement | null) => void;
+  addRectResizeHandle: (rectPath: SVGPathElement) => void;
+  updateRectPath: (rectPath: SVGPathElement) => void;
+  makeRectPathInteractive: (rectPath: SVGPathElement) => void;
+  deleteRectPath: (rectPath: SVGPathElement) => void;
+  rotateRectPath: (rectPath: SVGPathElement, angleDeg: number) => void;
+  rectPathDragStart: {
+    x: number;
+    y: number;
+    points: { x: number; y: number }[];
+  } | null;
+  updateRectPathStroke: (rectPath: SVGPathElement, color: string) => void;
+  updateRectPathStrokeWidth: (rectPath: SVGPathElement, width: number) => void;
+  deselectRectPath: () => void;
+  startRectPathDrag: (
+    rectPath: SVGPathElement,
+    clientX: number,
+    clientY: number
+  ) => void;
+  stopRectPathDrag: () => void;
 }
 
 export const useSeatStore = create<SeatState>((set, get) => ({
@@ -240,6 +266,319 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   isPathDragging: false,
   penPreviewLine: null,
   penPreviewHandle: null,
+  isRectPathDragging: false,
+  rectPathDragStart: null,
+
+  startRectPathDrag: (
+    rectPath: SVGPathElement,
+    clientX: number,
+    clientY: number
+  ) => {
+    const points = (rectPath as any)._rectPoints;
+    if (!points) return;
+    set({
+      isRectPathDragging: true,
+      rectPathDragStart: {
+        x: clientX,
+        y: clientY,
+        points: points.map((pt: any) => ({ ...pt })),
+      },
+    });
+  },
+
+  stopRectPathDrag: () => {
+    set({
+      isRectPathDragging: false,
+      rectPathDragStart: null,
+    });
+  },
+
+  updateRectPathStroke: (rectPath: SVGPathElement, color: string) => {
+    if (!rectPath) return;
+
+    // Store the new color for when deselected
+    rectPath.setAttribute("data-prev-stroke", color);
+
+    // If currently selected, keep red but update stored color
+    const { selectedRectPath } = get();
+    if (selectedRectPath === rectPath) {
+      rectPath.setAttribute("stroke", "#f44336");
+    } else {
+      rectPath.setAttribute("stroke", color);
+    }
+  },
+
+  updateRectPathStrokeWidth: (rectPath: SVGPathElement, width: number) => {
+    if (!rectPath) return;
+    rectPath.setAttribute("stroke-width", width.toString());
+
+    // Update resize handle size
+    const handle = (rectPath as any)._resizeHandle;
+    if (handle) {
+      const newR = Math.max(3, Math.round(width / 2));
+      handle.setAttribute("r", newR.toString());
+    }
+  },
+
+  createRectangle: (svg: SVGSVGElement, clientX: number, clientY: number) => {
+    const svgCoords = getSVGCoordsFromClient(svg, clientX, clientY);
+    const w = 80,
+      h = 60;
+    const cx = svgCoords.x,
+      cy = svgCoords.y;
+
+    // Rectangle corners (clockwise from top-left) - exactly like vanilla
+    const points = [
+      { x: cx - w / 2, y: cy - h / 2 },
+      { x: cx + w / 2, y: cy - h / 2 },
+      { x: cx + w / 2, y: cy + h / 2 },
+      { x: cx - w / 2, y: cy + h / 2 },
+    ];
+
+    // Create path data - exactly like vanilla
+    const d = `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y} L ${points[2].x} ${points[2].y} L ${points[3].x} ${points[3].y} Z`;
+
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("stroke", "#000");
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("fill", "none");
+    path.setAttribute("data-prev-stroke", "#000"); // Store original color
+    path.style.cursor = "pointer";
+
+    svg.appendChild(path);
+
+    // Store points for manipulation BEFORE adding any interaction - exactly like vanilla
+    (path as any)._rectPoints = points;
+
+    // Add resize handle and interaction
+    get().addRectResizeHandle(path);
+    get().makeRectPathInteractive(path);
+    get().selectRectPath(path);
+
+    set({ rectMode: false });
+  },
+
+  selectRectPath: (rectPath: SVGPathElement | null) => {
+    const { selectedRectPath } = get();
+
+    if (selectedRectPath && selectedRectPath !== rectPath) {
+      // Restore previous color on deselect
+      const prev = selectedRectPath.getAttribute("data-prev-stroke") || "#000";
+      selectedRectPath.setAttribute("stroke", prev);
+      // Remove resize handle
+      const handle = (selectedRectPath as any)._resizeHandle;
+      if (handle) {
+        handle.remove();
+        (selectedRectPath as any)._resizeHandle = undefined;
+      }
+    }
+
+    if (rectPath) {
+      // Store current color before highlighting
+      rectPath.setAttribute(
+        "data-prev-stroke",
+        rectPath.getAttribute("stroke") || "#000"
+      );
+      rectPath.setAttribute("stroke", "#f44336");
+
+      // Add resize handle
+      get().addRectResizeHandle(rectPath);
+    }
+
+    set({ selectedRectPath: rectPath });
+  },
+
+  addRectResizeHandle: (rectPath: SVGPathElement) => {
+    // Remove old handle if any
+    const oldHandle = (rectPath as any)._resizeHandle;
+    if (oldHandle) {
+      oldHandle.remove();
+    }
+
+    const points = (rectPath as any)._rectPoints;
+    if (!points) return;
+
+    const handle = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "circle"
+    );
+    handle.setAttribute("r", "3");
+    handle.setAttribute("fill", "#000");
+    handle.style.cursor = "nwse-resize";
+
+    const svg = rectPath.ownerSVGElement;
+    if (svg) svg.appendChild(handle);
+
+    // Helper to update handle position (bottom-right corner)
+    const updateHandle = () => {
+      let idx = 0;
+      let maxSum = -Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const sum = points[i].x + points[i].y;
+        if (sum > maxSum) {
+          maxSum = sum;
+          idx = i;
+        }
+      }
+      handle.setAttribute("cx", points[idx].x.toString());
+      handle.setAttribute("cy", points[idx].y.toString());
+    };
+
+    updateHandle();
+    (rectPath as any)._resizeHandle = handle;
+
+    // Add resize functionality
+    let isResizing = false;
+    let anchorIdx = 0,
+      handleIdx = 0;
+
+    handle.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      isResizing = true;
+
+      // Find anchor (top-left) and handle (bottom-right)
+      let minSum = Infinity,
+        maxSum = -Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const sum = points[i].x + points[i].y;
+        if (sum < minSum) {
+          minSum = sum;
+          anchorIdx = i;
+        }
+        if (sum > maxSum) {
+          maxSum = sum;
+          handleIdx = i;
+        }
+      }
+
+      const onMove = (ev: MouseEvent) => {
+        if (!isResizing) return;
+        const curr = getSVGCoordsFromClient(svg!, ev.clientX, ev.clientY);
+
+        const adj1 = (anchorIdx + 1) % 4;
+        const adj2 = (anchorIdx + 3) % 4;
+
+        // Move the handle point to cursor
+        points[handleIdx].x = curr.x;
+        points[handleIdx].y = curr.y;
+
+        // Project adjacents to maintain rectangle
+        points[adj1].x = curr.x;
+        points[adj1].y = points[anchorIdx].y;
+        points[adj2].x = points[anchorIdx].x;
+        points[adj2].y = curr.y;
+
+        get().updateRectPath(rectPath);
+      };
+
+      const onUp = () => {
+        isResizing = false;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      };
+
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    });
+  },
+
+  updateRectPath: (rectPath: SVGPathElement) => {
+    const points = (rectPath as any)._rectPoints;
+    if (!points) return;
+
+    const d = `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y} L ${points[2].x} ${points[2].y} L ${points[3].x} ${points[3].y} Z`;
+    rectPath.setAttribute("d", d);
+
+    // Update handle if present
+    const handle = (rectPath as any)._resizeHandle;
+    if (handle) {
+      let idx = 0;
+      let maxSum = -Infinity;
+      for (let i = 0; i < points.length; i++) {
+        const sum = points[i].x + points[i].y;
+        if (sum > maxSum) {
+          maxSum = sum;
+          idx = i;
+        }
+      }
+      handle.setAttribute("cx", points[idx].x.toString());
+      handle.setAttribute("cy", points[idx].y.toString());
+    }
+  },
+
+  makeRectPathInteractive: (rectPath: SVGPathElement) => {
+    // Select on click
+    rectPath.addEventListener("click", (e) => {
+      e.stopPropagation();
+      get().selectRectPath(rectPath);
+    });
+
+    // Drag on mousedown
+    rectPath.addEventListener("mousedown", (e) => {
+      const { selectedRectPath } = get();
+      if (selectedRectPath !== rectPath) return;
+
+      get().startRectPathDrag(rectPath, e.clientX, e.clientY);
+      e.stopPropagation();
+    });
+  },
+
+  deleteRectPath: (rectPath: SVGPathElement) => {
+    // Remove from DOM
+    rectPath.remove();
+    const handle = (rectPath as any)._resizeHandle;
+    if (handle) {
+      handle.remove();
+    }
+
+    // Clear selection if this was selected
+    const { selectedRectPath } = get();
+    if (selectedRectPath === rectPath) {
+      set({ selectedRectPath: null });
+    }
+  },
+
+  rotateRectPath: (rectPath: SVGPathElement, angleDeg: number) => {
+    const points = (rectPath as any)._rectPoints;
+    if (!points) return;
+
+    // Find center
+    const cx = points.reduce((sum: number, pt: any) => sum + pt.x, 0) / 4;
+    const cy = points.reduce((sum: number, pt: any) => sum + pt.y, 0) / 4;
+    const angleRad = (angleDeg * Math.PI) / 180;
+
+    // Update points IN PLACE
+    for (let i = 0; i < points.length; i++) {
+      const pt = points[i];
+      const dx = pt.x - cx,
+        dy = pt.y - cy;
+      pt.x = cx + dx * Math.cos(angleRad) - dy * Math.sin(angleRad);
+      pt.y = cy + dx * Math.sin(angleRad) + dy * Math.cos(angleRad);
+    }
+
+    get().updateRectPath(rectPath);
+    // rectPath.setAttribute("stroke", "#f44336"); // keep red
+  },
+
+  deselectRectPath: () => {
+    const { selectedRectPath } = get();
+    if (selectedRectPath) {
+      // Restore previous color
+      const prev = selectedRectPath.getAttribute("data-prev-stroke") || "#000";
+      selectedRectPath.setAttribute("stroke", prev);
+
+      // Remove resize handle
+      const handle = (selectedRectPath as any)._resizeHandle;
+      if (handle) {
+        handle.remove();
+        (selectedRectPath as any)._resizeHandle = undefined;
+      }
+
+      // Clear selection
+      set({ selectedRectPath: null });
+    }
+  },
 
   // 🖊️ PEN TOOL METHODS - FIXED TO WORK LIKE VANILLA
   togglePenMode: () => {

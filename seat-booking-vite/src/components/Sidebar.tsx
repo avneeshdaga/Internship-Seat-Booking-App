@@ -47,6 +47,15 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     updatePenPathStrokeWidth,
     rotatePenPath,
     deletePenPath,
+    deselectPenPath,
+
+    selectRectPath,
+    selectedRectPath,
+    deleteRectPath,
+    rotateRectPath,
+    updateRectPathStroke,
+    updateRectPathStrokeWidth,
+    deselectRectPath,
   } = useSeatStore();
 
   // Local state for grid inputs (EXACT from React)
@@ -72,13 +81,19 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
       // Get current stroke color (from data-prev-stroke to get actual color)
       const currentColor = selectedPenPath.path.getAttribute('data-prev-stroke') || '#000000';
       setStrokeColor(currentColor);
+    } else if (selectedRectPath) {
+      const currentWidth = selectedRectPath.getAttribute('stroke-width');
+      if (currentWidth) setStrokeWidth(parseInt(currentWidth));
+
+      const currentColor = selectedRectPath.getAttribute('data-prev-stroke') || '#000000';
+      setStrokeColor(currentColor);
     }
 
     if (selectedDesignerSeat) {
       setNewSeatId(selectedDesignerSeat);
       setSeatIdError('');
     }
-  }, [selectedDesignerSeat, selectedPenPath]);
+  }, [selectedDesignerSeat, selectedPenPath, selectedRectPath]);
 
   const handleRotateLeft = () => {
     if (selectedPenPath) {
@@ -96,6 +111,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     if (selectedPenPath) {
       rotatePenPath(selectedPenPath, 90);
     }
+    if (selectedRectPath) {
+      rotateRectPath(selectedRectPath, 90);
+    }
   };
 
   const handleDeletePath = () => {
@@ -105,9 +123,26 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
         deletePenPath(selectedPenPath);
       }
     }
+    if (selectedRectPath) {
+      const confirmDelete = confirm('Are you sure you want to delete this path?');
+      if (confirmDelete) {
+        deleteRectPath(selectedRectPath);
+      }
+    }
   };
 
-  // Handle stroke width change
+  const handleStrokeColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newColor = e.target.value;
+    setStrokeColor(newColor);
+
+    if (selectedPenPath) {
+      updatePenPathStroke(selectedPenPath, newColor);
+    }
+    if (selectedRectPath) {
+      updateRectPathStroke(selectedRectPath, newColor);
+    }
+  };
+
   const handleStrokeWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newWidth = parseInt(e.target.value);
     setStrokeWidth(newWidth);
@@ -115,15 +150,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     if (selectedPenPath) {
       updatePenPathStrokeWidth(selectedPenPath, newWidth);
     }
-  };
-
-  // Handle stroke color change
-  const handleStrokeColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newColor = e.target.value;
-    setStrokeColor(newColor);
-
-    if (selectedPenPath) {
-      updatePenPathStroke(selectedPenPath, newColor);
+    if (selectedRectPath) {
+      updateRectPathStrokeWidth(selectedRectPath, newWidth);
     }
   };
 
@@ -383,7 +411,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
           {/* Drawing Controls - EXACT from React */}
           <div className="tool-section">
             <h3>Drawing Controls</h3>
-            {selectedPenPath ? (
+            {selectedPenPath || selectedRectPath ? (
               <div className="control-group">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <label>Stroke Width:</label>
@@ -413,7 +441,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
               </div>
             ) : (
               <p style={{ color: '#666', fontStyle: 'italic' }}>
-                Select a path to edit its properties
+                Select a path or shape to edit its properties
               </p>
             )}
           </div>
@@ -421,16 +449,25 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
           {/* Transform Tools - EXACT from React */}
           <div className="tool-section">
             <h3>Transform</h3>
-            {selectedPenPath ? (
+            {selectedPenPath || selectedRectPath ? (
               <div className="button-group">
                 <button className="secondary-btn" onClick={handleRotateLeft}>↻ Rotate Left</button>
                 <button className="secondary-btn" onClick={handleRotateRight}>↺ Rotate Right</button>
                 <button className="secondary-btn" onClick={handleDeletePath}>🗑️ Delete Path</button>
                 <button className="secondary-btn" onClick={handleFlipHorizontal}>🔄 Flip 90°</button>
+                <button
+                  className="secondary-btn"
+                  onClick={() => {
+                    if (selectedPenPath) deselectPenPath();
+                    if (selectedRectPath) selectRectPath(null);  // ADD THIS
+                  }}
+                >
+                  ❌ Deselect
+                </button>
               </div>
             ) : (
               <p style={{ color: '#666', fontStyle: 'italic' }}>
-                Select a path to access transform tools
+                Select a path or shape to access transform tools
               </p>
             )}
           </div>

@@ -78,6 +78,20 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     removePenPoint,
     checkPenPathSnap,
     clearPenPreview,
+
+    // Rect
+    rectMode,
+    createRectangle,
+    selectedRectPath,
+    isRectPathDragging,
+    rectPathDragStart,
+    updateRectPath,
+    deselectRectPath,
+    selectRectPath,
+    startRectPathDrag,
+    stopRectPathDrag,
+    deleteRectPath,
+    rotateRectPath,
   } = useSeatStore();
 
   const {
@@ -114,6 +128,20 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
           }
         }
       }
+      if (mode === 'admin' && selectedRectPath) {
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+          deleteRectPath(selectedRectPath);
+        }
+        if (e.key === 'Escape') {
+          deselectRectPath();
+        }
+        if (e.key === 'ArrowLeft') {
+          rotateRectPath(selectedRectPath, -90);
+        }
+        if (e.key === 'ArrowRight') {
+          rotateRectPath(selectedRectPath, 90);
+        }
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
@@ -140,6 +168,23 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
         return;
       }
 
+      if (isRectPathDragging && selectedRectPath && svgRef.current) {
+        const svgCoords1 = getSVGCoords(rectPathDragStart!.x, rectPathDragStart!.y);
+        const svgCoords2 = getSVGCoords(e.clientX, e.clientY);
+        const dx = svgCoords2.x - svgCoords1.x;
+        const dy = svgCoords2.y - svgCoords1.y;
+
+        // Update points by reference
+        const points = (selectedRectPath as any)._rectPoints;
+        for (let i = 0; i < points.length; i++) {
+          points[i].x = rectPathDragStart!.points[i].x + dx;
+          points[i].y = rectPathDragStart!.points[i].y + dy;
+        }
+
+        updateRectPath(selectedRectPath);
+        return;
+      }
+
       // Pen tool preview
       if (penMode && !penDragging && currentPenPath) {
         checkPenPathSnap(svgRef.current, e.clientX, e.clientY);
@@ -156,6 +201,9 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       if (isPathDragging) {
         stopPathDrag();
       }
+      if (isRectPathDragging) {
+        stopRectPathDrag();
+      }
     };
 
     if (isDragging) {
@@ -163,7 +211,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       document.addEventListener('mouseup', handleGlobalMouseUp);
     }
 
-    if (penDragging || isPathDragging || (penMode && currentPenPath)) {
+    if (penDragging || isPathDragging || isRectPathDragging || (penMode && currentPenPath)) {
       document.addEventListener('mousemove', handleGlobalMouseMove);
       document.addEventListener('mouseup', handleGlobalMouseUp);
     }
@@ -172,8 +220,13 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       document.removeEventListener('mousemove', handleGlobalMouseMove);
       document.removeEventListener('mouseup', handleGlobalMouseUp);
     };
-  }, [isDragging, dragTarget, updateSeatDrag, stopSeatDrag, penDragging, isPathDragging, penMode, currentPenPath, selectedPenPath, updatePenDrag, stopPenDrag, updatePathDrag, stopPathDrag, checkPenPathSnap]);
-
+  }, [
+    isDragging, dragTarget, updateSeatDrag, stopSeatDrag,
+    penDragging, isPathDragging, isRectPathDragging,
+    penMode, currentPenPath, selectedPenPath, selectedRectPath,
+    updatePenDrag, stopPenDrag, updatePathDrag, stopPathDrag,
+    stopRectPathDrag, checkPenPathSnap
+  ]);
   // Generate next available seat ID (Phase 4)
   const getNextAvailableSeatId = useCallback((): string => {
     const usedNumbers = new Set<number>();
@@ -284,6 +337,14 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
 
       console.log('Added new seat:', seatId, 'at', svgCoords.x, svgCoords.y);
     } else if (mode === 'admin') {
+      if (rectMode && e.target === svgRef.current) {
+        createRectangle(svgRef.current, e.clientX, e.clientY);
+        return;
+      }
+      if (selectedRectPath) {
+        deselectRectPath();
+      }
+
       if (penMode) {
         if (!svgRef.current) return;
 
@@ -316,7 +377,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       // Click on empty space deselects current seat
       selectDesignerSeat(null);
     }
-  }, [mode, addMode, getSVGCoords, getNextAvailableSeatId, addSeat, selectDesignerSeat, penMode, currentPenPath, selectedPenPath, clearPenPreview, finishPenPath, addPenPoint, startPenPath, deselectPenPath]);
+  }, [mode, addMode, getSVGCoords, getNextAvailableSeatId, addSeat, selectDesignerSeat, penMode, currentPenPath, selectedPenPath, clearPenPreview, finishPenPath, addPenPoint, startPenPath, deselectPenPath, createRectangle, rectMode]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     // Pen tool: Check if starting handle creation using existing drag system
@@ -324,31 +385,31 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       const handled = startPenHandleFromClick(svgRef.current, e.clientX, e.clientY);
       if (handled) return; // Handle creation started using existing startPenDrag
     }
-  
+
     // Your existing panning logic
     if (e.target === svgRef.current && !isDragging) {
       startPanning(mode === 'admin', e.clientX, e.clientY);
     }
   }, [mode, startPanning, isDragging, penMode, currentPenPath, startPenHandleFromClick]);
 
-    const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-      if (!svgRef.current) return;
-    
-      if (penDragging) {
-        updatePenDrag(svgRef.current, e.clientX, e.clientY, e.shiftKey, e.altKey);
-        return; // Skip preview while dragging
-      }
-    
-      // Show preview lines only when NOT dragging handles
-      if (penMode && currentPenPath) {
-        checkPenPathSnap(svgRef.current, e.clientX, e.clientY);
-      }
-    
-      // Your existing pan logic
-      if (!isDragging && (isPanning || isDesignerPanning)) {
-        updatePan(mode === 'admin', e.clientX, e.clientY);
-      }
-    }, [mode, isPanning, isDesignerPanning, updatePan, isDragging, penMode, currentPenPath, checkPenPathSnap]);
+  const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if (!svgRef.current) return;
+
+    if (penDragging) {
+      updatePenDrag(svgRef.current, e.clientX, e.clientY, e.shiftKey, e.altKey);
+      return; // Skip preview while dragging
+    }
+
+    // Show preview lines only when NOT dragging handles
+    if (penMode && currentPenPath) {
+      checkPenPathSnap(svgRef.current, e.clientX, e.clientY);
+    }
+
+    // Pan logic
+    if (!isDragging && (isPanning || isDesignerPanning)) {
+      updatePan(mode === 'admin', e.clientX, e.clientY);
+    }
+  }, [mode, isPanning, isDesignerPanning, updatePan, isDragging, penMode, currentPenPath, checkPenPathSnap]);
 
   const handleMouseLeave = useCallback(() => {
     // Clear pen preview on mouse leave 
