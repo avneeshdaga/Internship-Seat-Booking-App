@@ -92,6 +92,13 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     stopRectPathDrag,
     deleteRectPath,
     rotateRectPath,
+
+    shapeMode,
+    createCircle,
+    selectedCirclePath,
+    updateCircleDrag,
+    stopCircleDrag,
+    deselectCirclePath,
   } = useSeatStore();
 
   const {
@@ -185,6 +192,11 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
         return;
       }
 
+      if (isDragging && dragTarget === "circle" && selectedCirclePath) {
+        updateCircleDrag(e.clientX, e.clientY);
+        return;
+      }
+
       // Pen tool preview
       if (penMode && !penDragging && currentPenPath) {
         checkPenPathSnap(svgRef.current, e.clientX, e.clientY);
@@ -204,6 +216,9 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       if (isRectPathDragging) {
         stopRectPathDrag();
       }
+      if (isDragging && dragTarget === "circle") {
+        stopCircleDrag();
+      }
     };
 
     if (isDragging) {
@@ -220,13 +235,12 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       document.removeEventListener('mousemove', handleGlobalMouseMove);
       document.removeEventListener('mouseup', handleGlobalMouseUp);
     };
-  }, [
-    isDragging, dragTarget, updateSeatDrag, stopSeatDrag,
+  }, [isDragging, dragTarget, updateSeatDrag, stopSeatDrag,
     penDragging, isPathDragging, isRectPathDragging,
     penMode, currentPenPath, selectedPenPath, selectedRectPath,
     updatePenDrag, stopPenDrag, updatePathDrag, stopPathDrag,
-    stopRectPathDrag, checkPenPathSnap
-  ]);
+    stopRectPathDrag, checkPenPathSnap]);
+
   // Generate next available seat ID (Phase 4)
   const getNextAvailableSeatId = useCallback((): string => {
     const usedNumbers = new Set<number>();
@@ -345,6 +359,14 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
         deselectRectPath();
       }
 
+      if (shapeMode === "circle" && e.target === svgRef.current) {
+        createCircle(svgRef.current, e.clientX, e.clientY);
+        return;
+      }
+      if (selectedCirclePath) {
+        deselectCirclePath();
+      }
+
       if (penMode) {
         if (!svgRef.current) return;
 
@@ -377,7 +399,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       // Click on empty space deselects current seat
       selectDesignerSeat(null);
     }
-  }, [mode, addMode, getSVGCoords, getNextAvailableSeatId, addSeat, selectDesignerSeat, penMode, currentPenPath, selectedPenPath, clearPenPreview, finishPenPath, addPenPoint, startPenPath, deselectPenPath, createRectangle, rectMode]);
+  }, [mode, addMode, getSVGCoords, getNextAvailableSeatId, addSeat, selectDesignerSeat, penMode, currentPenPath, selectedPenPath, clearPenPreview, finishPenPath, addPenPoint, startPenPath, deselectPenPath, createRectangle, rectMode, shapeMode, createCircle, selectedCirclePath, deselectCirclePath]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     // Pen tool: Check if starting handle creation using existing drag system
@@ -560,9 +582,13 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
             {mode === 'admin' ? 'Layout Designer' : 'Seat Selection'}
             {mode === 'admin' && addMode && <span className="tool-indicator"> - Add Seat Mode</span>}
             {mode === 'admin' && penMode && <span className="tool-indicator"> - Pen Tool Mode</span>}
-            {mode === 'admin' && isDragging && <span className="tool-indicator"> - Dragging Seat</span>}
+            {mode === 'admin' && rectMode && <span className="tool-indicator"> - Rect Tool Mode</span>}
+            {mode === 'admin' && shapeMode && <span className="tool-indicator"> - Circle Tool Mode</span>}
+            {mode === 'admin' && isDragging && selectedDesignerSeat && <span className="tool-indicator"> - Dragging Seat</span>}
             {mode === 'admin' && penDragging && <span className="tool-indicator"> - Dragging Handle</span>}
             {mode === 'admin' && isPathDragging && <span className="tool-indicator"> - Dragging Path</span>}
+            {mode === 'admin' && isRectPathDragging && <span className="tool-indicator"> - Dragging Rect Path</span>}
+            {mode === 'admin' && isDragging && <span className="tool-indicator"> - Dragging Circle Path</span>}
           </h2>
           <ZoomControls mode={mode} />
         </div>

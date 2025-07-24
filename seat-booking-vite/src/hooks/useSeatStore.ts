@@ -212,6 +212,22 @@ interface SeatState {
     clientY: number
   ) => void;
   stopRectPathDrag: () => void;
+  createCircle: (svg: SVGSVGElement, clientX: number, clientY: number) => void;
+  selectCirclePath: (circlePath: SVGPathElement | null) => void;
+  addCircleResizeHandle: (circlePath: SVGPathElement) => void;
+  updateCirclePath: (circlePath: SVGPathElement) => void;
+  makeCirclePathInteractive: (circlePath: SVGPathElement) => void;
+  startCircleDrag: (
+    circlePath: SVGPathElement,
+    clientX: number,
+    clientY: number
+  ) => void;
+  updateCircleDrag: (clientX: number, clientY: number) => void;
+  stopCircleDrag: () => void;
+  deleteCirclePath: (circlePath: SVGPathElement) => void;
+  deselectCirclePath: () => void;
+  updateCirclePathStroke: (circlePath: SVGPathElement, color: string) => void;
+  updateCirclePathStrokeWidth: (circlePath: SVGPathElement, width: number) => void;
 }
 
 export const useSeatStore = create<SeatState>((set, get) => ({
@@ -269,6 +285,247 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   isRectPathDragging: false,
   rectPathDragStart: null,
 
+  createCircle: (svg: SVGSVGElement, clientX: number, clientY: number) => {
+    const svgCoords = getSVGCoordsFromClient(svg, clientX, clientY);
+    const cx = svgCoords.x, cy = svgCoords.y;
+    const r = 40;
+  
+    // SVG path for circle
+    const d = `
+      M ${cx - r},${cy}
+      a ${r},${r} 0 1,0 ${2 * r},0
+      a ${r},${r} 0 1,0 ${-2 * r},0
+    `;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", d);
+    path.setAttribute("stroke", "#000");
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("fill", "none");
+    path.setAttribute("data-prev-stroke", "#000");
+    path.style.cursor = "pointer";
+    svg.appendChild(path);
+  
+    (path as any)._circleData = { cx, cy, r };
+  
+    // --- ADD THIS BLOCK: create center point ---
+    const center = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    center.setAttribute("cx", cx.toString());
+    center.setAttribute("cy", cy.toString());
+    center.setAttribute("r", "4");
+    center.setAttribute("fill", "#35383bff"); 
+    center.setAttribute("stroke", "#fff");
+    center.setAttribute("stroke-width", "2");
+    svg.appendChild(center);
+  
+    // Optionally, store reference for future updates
+    (path as any)._centerHandle = center;
+  
+    get().addCircleResizeHandle(path);
+    get().makeCirclePathInteractive(path);
+    get().selectCirclePath(path);
+  
+    set({ shapeMode: "none" });
+  },
+
+  selectCirclePath: (circlePath: SVGPathElement | null) => {
+    const { selectedCirclePath } = get();
+    if (selectedCirclePath && selectedCirclePath !== circlePath) {
+      const prev =
+        selectedCirclePath.getAttribute("data-prev-stroke") || "#000";
+      selectedCirclePath.setAttribute("stroke", prev);
+      const handle = (selectedCirclePath as any)._resizeHandle;
+      if (handle) {
+        handle.remove();
+        (selectedCirclePath as any)._resizeHandle = undefined;
+      }
+    }
+    if (circlePath) {
+      circlePath.setAttribute(
+        "data-prev-stroke",
+        circlePath.getAttribute("stroke") || "#000"
+      );
+      circlePath.setAttribute("stroke", "#f44336");
+      get().addCircleResizeHandle(circlePath);
+    }
+    set({ selectedCirclePath: circlePath });
+  },
+
+  addCircleResizeHandle: (circlePath: SVGPathElement) => {
+    const oldHandle = (circlePath as any)._resizeHandle;
+    if (oldHandle) oldHandle.remove();
+
+    const data = (circlePath as any)._circleData;
+    if (!data) return;
+
+    const handle = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "circle"
+    );
+    handle.setAttribute("r", "3");
+    handle.setAttribute("fill", "#000");
+    handle.style.cursor = "ew-resize";
+    const svg = circlePath.ownerSVGElement;
+    if (svg) svg.appendChild(handle);
+
+    function updateHandle() {
+      handle.setAttribute("cx", (data.cx + data.r).toString());
+      handle.setAttribute("cy", data.cy.toString());
+    }
+    updateHandle();
+    (circlePath as any)._resizeHandle = handle;
+    (handle as any)._updateHandle = updateHandle;
+
+    // --- Resize logic ---
+    let isResizing = false;
+    let origR = data.r;
+    handle.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      isResizing = true;
+      const resizeStart = e.clientX;
+      origR = data.r;
+
+      function onMove(ev: MouseEvent) {
+        if (!isResizing) return;
+        const dx = ev.clientX - resizeStart;
+        const newR = Math.max(10, origR + dx);
+        data.r = newR;
+        get().updateCirclePath(circlePath);
+        updateHandle();
+      }
+      function onUp() {
+        isResizing = false;
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", onUp);
+      }
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    });
+  },
+
+  updateCirclePath: (circlePath: SVGPathElement) => {
+    const data = (circlePath as any)._circleData;
+    if (!data) return;
+    const { cx, cy, r } = data;
+    const d = `
+      M ${cx - r},${cy}
+      a ${r},${r} 0 1,0 ${2 * r},0
+      a ${r},${r} 0 1,0 ${-2 * r},0
+    `;
+    circlePath.setAttribute("d", d);
+  
+    // Update center handle position
+    const center = (circlePath as any)._centerHandle;
+    if (center) {
+      center.setAttribute("cx", cx.toString());
+      center.setAttribute("cy", cy.toString());
+    }
+  
+    // Update resize handle if present
+    const handle = (circlePath as any)._resizeHandle;
+    if (handle && handle._updateHandle) handle._updateHandle();
+  },
+
+  makeCirclePathInteractive: (circlePath: SVGPathElement) => {
+    circlePath.addEventListener("click", (e) => {
+      e.stopPropagation();
+      get().selectCirclePath(circlePath);
+    });
+
+    circlePath.addEventListener("mousedown", (e) => {
+      const { selectedCirclePath } = get();
+      if (selectedCirclePath !== circlePath) return;
+      get().startCircleDrag(circlePath, e.clientX, e.clientY);
+      e.stopPropagation();
+    });
+  },
+
+  startCircleDrag: (
+    circlePath: SVGPathElement,
+    clientX: number,
+    clientY: number
+  ) => {
+    const data = (circlePath as any)._circleData;
+    if (!data) return;
+    set({
+      isDragging: true,
+      dragStart: { x: clientX, y: clientY, seatX: data.cx, seatY: data.cy },
+      dragTarget: "circle",
+      selectedCirclePath: circlePath,
+    });
+  },
+
+  updateCircleDrag: (clientX: number, clientY: number) => {
+    const { dragStart, selectedCirclePath } = get();
+    if (!dragStart || !selectedCirclePath) return;
+    const svg = selectedCirclePath.ownerSVGElement;
+    if (!svg) return;
+    const curr = getSVGCoordsFromClient(svg, clientX, clientY);
+    const start = getSVGCoordsFromClient(svg, dragStart.x, dragStart.y);
+    const dx = curr.x - start.x;
+    const dy = curr.y - start.y;
+    const data = (selectedCirclePath as any)._circleData;
+    if (!data) return;
+    data.cx = dragStart.seatX + dx;
+    data.cy = dragStart.seatY + dy;
+    get().updateCirclePath(selectedCirclePath);
+  },
+
+  stopCircleDrag: () => {
+    set({
+      isDragging: false,
+      dragStart: null,
+      dragTarget: null,
+    });
+    get().deselectCirclePath();
+  },
+
+  deleteCirclePath: (circlePath: SVGPathElement) => {
+    circlePath.remove();
+    const handle = (circlePath as any)._resizeHandle;
+    if (handle) handle.remove();
+    const { selectedCirclePath } = get();
+    if (selectedCirclePath === circlePath) {
+      set({ selectedCirclePath: null });
+    }
+  },
+
+  deselectCirclePath: () => {
+    const { selectedCirclePath } = get();
+    if (selectedCirclePath) {
+      const prev =
+        selectedCirclePath.getAttribute("data-prev-stroke") || "#000";
+      selectedCirclePath.setAttribute("stroke", prev);
+      const handle = (selectedCirclePath as any)._resizeHandle;
+      if (handle) {
+        handle.remove();
+        (selectedCirclePath as any)._resizeHandle = undefined;
+      }
+      set({ selectedCirclePath: null });
+    }
+  },
+
+  updateCirclePathStroke: (circlePath: SVGPathElement, color: string) => {
+    if (!circlePath) return;
+    circlePath.setAttribute("data-prev-stroke", color);
+    const { selectedCirclePath } = get();
+    if (selectedCirclePath === circlePath) {
+      circlePath.setAttribute("stroke", "#f44336");
+    } else {
+      circlePath.setAttribute("stroke", color);
+    }
+  },
+  
+  updateCirclePathStrokeWidth: (circlePath: SVGPathElement, width: number) => {
+    if (!circlePath) return;
+    circlePath.setAttribute("stroke-width", width.toString());
+    // Update resize handle size if present
+    const handle = (circlePath as any)._resizeHandle;
+    if (handle) {
+      const newR = Math.max(3, Math.round(width / 2));
+      handle.setAttribute("r", newR.toString());
+    }
+  },
+
   startRectPathDrag: (
     rectPath: SVGPathElement,
     clientX: number,
@@ -291,6 +548,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       isRectPathDragging: false,
       rectPathDragStart: null,
     });
+    get().deselectRectPath();
   },
 
   updateRectPathStroke: (rectPath: SVGPathElement, color: string) => {
@@ -580,7 +838,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     }
   },
 
-  // 🖊️ PEN TOOL METHODS - FIXED TO WORK LIKE VANILLA
+  // 🖊️ PEN TOOL METHODS - WORK LIKE VANILLA
   togglePenMode: () => {
     const { penMode, currentPenPath } = get();
     if (penMode && currentPenPath) {

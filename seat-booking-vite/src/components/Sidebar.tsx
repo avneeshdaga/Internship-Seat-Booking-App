@@ -56,6 +56,14 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     updateRectPathStroke,
     updateRectPathStrokeWidth,
     deselectRectPath,
+
+    selectedCirclePath,
+    selectCirclePath,
+    deselectCirclePath,
+    updateCirclePathStroke,
+    updateCirclePathStrokeWidth,
+    updateCirclePath,
+    deleteCirclePath,
   } = useSeatStore();
 
   // Local state for grid inputs (EXACT from React)
@@ -129,6 +137,12 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
         deleteRectPath(selectedRectPath);
       }
     }
+    if (selectedCirclePath) {
+      const confirmDelete = confirm('Are you sure you want to delete this circle?');
+      if (confirmDelete) {
+        deleteCirclePath(selectedCirclePath);
+      }
+    }
   };
 
   const handleStrokeColorChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -141,6 +155,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     if (selectedRectPath) {
       updateRectPathStroke(selectedRectPath, newColor);
     }
+    if (selectedCirclePath) {
+      updateCirclePathStroke(selectedCirclePath, newColor);
+    }
   };
 
   const handleStrokeWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -152,6 +169,9 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     }
     if (selectedRectPath) {
       updateRectPathStrokeWidth(selectedRectPath, newWidth);
+    }
+    if (selectedCirclePath) {
+      updateCirclePathStrokeWidth(selectedCirclePath, newWidth);
     }
   };
 
@@ -411,7 +431,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
           {/* Drawing Controls - EXACT from React */}
           <div className="tool-section">
             <h3>Drawing Controls</h3>
-            {selectedPenPath || selectedRectPath ? (
+            {selectedPenPath || selectedRectPath || selectedCirclePath ? (
               <div className="control-group">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <label>Stroke Width:</label>
@@ -449,7 +469,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
           {/* Transform Tools - EXACT from React */}
           <div className="tool-section">
             <h3>Transform</h3>
-            {selectedPenPath || selectedRectPath ? (
+            {selectedPenPath || selectedRectPath || selectedCirclePath ? (
               <div className="button-group">
                 <button className="secondary-btn" onClick={handleRotateLeft}>↻ Rotate Left</button>
                 <button className="secondary-btn" onClick={handleRotateRight}>↺ Rotate Right</button>
@@ -459,7 +479,8 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
                   className="secondary-btn"
                   onClick={() => {
                     if (selectedPenPath) deselectPenPath();
-                    if (selectedRectPath) selectRectPath(null);  // ADD THIS
+                    if (selectedRectPath) selectRectPath(null);
+                    if (selectedCirclePath) selectCirclePath(null);
                   }}
                 >
                   ❌ Deselect
