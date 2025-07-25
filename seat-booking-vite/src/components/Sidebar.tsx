@@ -1,5 +1,6 @@
 ﻿import React, { useState } from 'react';
 import { useSeatStore } from '../hooks/useSeatStore';
+const svgRef = React.createRef<SVGSVGElement>();
 
 interface SidebarProps {
   mode: 'admin' | 'user';
@@ -72,6 +73,17 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     updateTextElementFontSize,
     updateTextElementContent,
     deleteTextElement,
+
+    bgImage,
+    bgImageOpacity,
+    bgImageFit,
+    setBgImage,
+    setBgImageOpacity,
+    setBgImageFit,
+    resetBgImage,
+
+    exportLayout,
+    importLayout,
   } = useSeatStore();
 
   // Local state for grid inputs (EXACT from React)
@@ -355,7 +367,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
                 <span className="tool-icon">📝</span>
                 <span className="tool-label">Add Text</span>
               </button>
-              
+
             </div>
           </div>
 
@@ -541,7 +553,7 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
                       type="color"
                       value={textElements.find(t => t.id === selectedTextElement)?.color || '#000000'}
                       onChange={e => updateTextElementColor(selectedTextElement, e.target.value)}
-                      style={{  width: '80px', height: '40px' }}
+                      style={{ width: '80px', height: '40px' }}
                     />
                   </label>
                 </div>
@@ -559,31 +571,137 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
 
           {/* Background - EXACT from React */}
           <div className="tool-section">
-            <h3>Background</h3>
-            <div className="button-group">
-              <button className="secondary-btn">🖼️ Add Background Image</button>
-              <button
-                className="secondary-btn"
-                onClick={() => setBgImageVisible(!bgImageVisible)}
-              >
-                {bgImageVisible ? '👁️ Hide Background' : '👁️‍🗨️ Show Background'}
-              </button>
+            <h3>Background Image</h3>
+            <div className="input-group" style={{ gap: 12 }}>
+              <label style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <span style={{ marginBottom: 4 }}>Upload:</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  style={{ width: '100%' }}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = ev => setBgImage(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </label>
+              {bgImage && (
+                <>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    Opacity:
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="1"
+                      step="0.05"
+                      value={bgImageOpacity}
+                      onChange={e => setBgImageOpacity(Number(e.target.value))}
+                      style={{ width: '100px' }}
+                    />
+                    <span>{bgImageOpacity}</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 8 }}>
+                    Fit:
+                    <select
+                      value={bgImageFit}
+                      onChange={e => setBgImageFit(e.target.value as any)}
+                      style={{
+                        minWidth: '140px',
+                        padding: '8px 16px',
+                        fontSize: '16px',
+                        borderRadius: '6px',
+                        border: '1px solid #adafafff',
+                        background: '#ffffffff',
+                        color: '#222',
+                        fontWeight: 500,
+                        outline: 'none',
+                        cursor: 'pointer',
+                        transition: 'border 0.2s',
+                      }}
+                    >
+                      <option value="contain">Contain</option>
+                      <option value="cover">Cover</option>
+                      <option value="stretch">Stretch</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    Show Background
+                    <input
+                      type="checkbox"
+                      checked={bgImageVisible}
+                      onChange={e => setBgImageVisible(e.target.checked)}
+                    />
+                  </label>
+                  <div className="button-group" style={{ marginTop: 8 }}>
+                    <button className="danger-btn" onClick={resetBgImage}>Remove Image</button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
           {/* Layout Management - EXACT from React */}
           <div className="tool-section">
             <h3>Layout Management</h3>
-            <div className="button-group">
-              <button className="secondary-btn">📁 Upload SVG</button>
-              <button className="secondary-btn">💾 Save Layout</button>
-              <button className="secondary-btn">📂 Load Layout</button>
+            <div className="button-group" style={{ gap: 10 }}>
               <button
-                className="danger-btn"
-                onClick={clearAll}
+                style={{ padding: '8px 16px', fontWeight: 500, fontSize: 14 }}
+                onClick={() => {
+                  const data = exportLayout();
+                  const blob = new Blob([data], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = 'seat-layout.json';
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
               >
-                🗑️ Clear All
+                💾 Export Layout
               </button>
+              <label style={{ width: '100%', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+                <span
+                  style={{
+                    marginBottom: 4,
+                    fontSize: '16px',
+                    fontWeight: 500,
+                    color: '#222',
+                    letterSpacing: 0.2,
+                  }}
+                >
+                  Import:
+                </span>
+                <input
+                  type="file"
+                  accept="application/json"
+                  style={{
+                    width: '100%',
+                    minWidth: '140px',
+                    padding: '8px 10px',
+                    fontSize: '14px',
+                    borderRadius: '6px',
+                    border: '1px solid #adafafff',
+                    background: '#fff',
+                    color: '#222',
+                    fontWeight: 500,
+                    outline: 'none',
+                    cursor: 'pointer',
+                    transition: 'border 0.2s',
+                  }}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = ev => {
+                      importLayout(ev.target?.result as string, svgRef.current!);
+                    };
+                    reader.readAsText(file);
+                  }}
+                />
+              </label>
             </div>
           </div>
 

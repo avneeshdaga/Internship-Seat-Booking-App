@@ -93,6 +93,10 @@ interface SeatState {
   currentSeats: Seat[];
   textElements: TextElement[];
 
+  bgImage: string | null;
+  bgImageOpacity: number;
+  bgImageFit: "contain" | "cover" | "stretch";
+
   // Actions
   setSelectedSeats: (seats: Set<string>) => void;
   addSeat: (seat: Seat) => void;
@@ -245,6 +249,14 @@ interface SeatState {
   updateTextDrag: (clientX: number, clientY: number) => void;
   stopTextDrag: () => void;
   updateTextFontSizeForZoom: (zoom: number) => void;
+
+  setBgImage: (src: string) => void;
+  setBgImageOpacity: (opacity: number) => void;
+  setBgImageFit: (fit: "contain" | "cover" | "stretch") => void;
+  resetBgImage: () => void;
+
+  exportLayout: () => string;
+  importLayout: (layoutString: string, svg?: SVGSVGElement) => void;
 }
 
 export const useSeatStore = create<SeatState>((set, get) => ({
@@ -301,8 +313,191 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   penPreviewHandle: null,
   isRectPathDragging: false,
   rectPathDragStart: null,
-
   selectedTextElement: null,
+
+  bgImage: null,
+  bgImageOpacity: 1,
+  //bgImageVisible: true,
+  bgImageFit: "contain",
+
+  exportLayout: () => {
+    const state = get();
+    return JSON.stringify(
+      {
+        seats: state.currentSeats,
+        penPaths: state.finishedPenPaths.map((p) => ({
+          points: p.points.map((pt) => ({
+            x: pt.x,
+            y: pt.y,
+            handleIn: pt.handleIn,
+            handleOut: pt.handleOut,
+          })),
+          closed: p.closed,
+          stroke: p.path?.getAttribute('data-prev-stroke') || '#000',
+          strokeWidth: p.path?.getAttribute('stroke-width') || '2',
+        })),
+        rects: Array.from(document.querySelectorAll('path[data-rect]')).map(path => ({
+          d: path.getAttribute('d'),
+          stroke: path.getAttribute('data-prev-stroke'),
+          strokeWidth: path.getAttribute('stroke-width'),
+        })),
+        circles: Array.from(document.querySelectorAll('path[data-circle]')).map(path => ({
+          d: path.getAttribute('d'),
+          stroke: path.getAttribute('data-prev-stroke'),
+          strokeWidth: path.getAttribute('stroke-width'),
+        })),
+        texts: state.textElements.map((t) => ({
+          x: t.x,
+          y: t.y,
+          content: t.content,
+          fontSize: t.fontSize,
+          color: t.color,
+        })),
+      },
+      null,
+      2
+    );
+  },
+
+  importLayout: (layoutString: string, svg?: SVGSVGElement) => {
+    try {
+      const layout = JSON.parse(layoutString);
+  
+      // Remove all SVG elements for pen paths, rects, circles, texts
+      if (svg) {
+        svg.querySelectorAll("path, text").forEach((el) => el.remove());
+      }
+  
+      // Restore seats
+      set({
+        currentSeats: layout.seats || [],
+        finishedPenPaths: [],
+        textElements: [],
+        selectedPenPath: null,
+        selectedRectPath: null,
+        selectedCirclePath: null,
+        selectedTextElement: null,
+      });
+  
+      // Restore pen paths
+      if (layout.penPaths && svg) {
+        layout.penPaths.forEach((p: any) => {
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("stroke", p.stroke || "#000");
+          path.setAttribute("stroke-width", p.strokeWidth || "2");
+          path.setAttribute("fill", "none");
+          path.setAttribute("data-prev-stroke", p.stroke || "#000");
+          svg.appendChild(path);
+  
+          const points = p.points.map((pt: any) => ({
+            x: pt.x,
+            y: pt.y,
+            handleIn: pt.handleIn,
+            handleOut: pt.handleOut,
+          }));
+          const penPath = { points, path, closed: p.closed };
+          get().updatePenPath(penPath, true);
+  
+          path.style.cursor = "pointer";
+          path.addEventListener("click", (e) => {
+            e.stopPropagation();
+            get().selectPenPath(penPath);
+          });
+  
+          set((state) => ({
+            finishedPenPaths: [...state.finishedPenPaths, penPath],
+          }));
+        });
+      }
+  
+      // Restore rectangles
+      if (layout.rects && svg) {
+        layout.rects.forEach((r: any) => {
+          const rectPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          rectPath.setAttribute("d", r.d);
+          rectPath.setAttribute("stroke", r.stroke || "#000");
+          rectPath.setAttribute("stroke-width", r.strokeWidth || "2");
+          rectPath.setAttribute("fill", "none");
+          rectPath.setAttribute("data-rect", "true");
+          rectPath.setAttribute("data-prev-stroke", r.stroke || "#000");
+          svg.appendChild(rectPath);
+          // Add any interactive logic as needed
+        });
+      }
+  
+      // Restore circles
+      if (layout.circles && svg) {
+        layout.circles.forEach((c: any) => {
+          const circlePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          circlePath.setAttribute("d", c.d);
+          circlePath.setAttribute("stroke", c.stroke || "#000");
+          circlePath.setAttribute("stroke-width", c.strokeWidth || "2");
+          circlePath.setAttribute("fill", "none");
+          circlePath.setAttribute("data-circle", "true");
+          circlePath.setAttribute("data-prev-stroke", c.stroke || "#000");
+          svg.appendChild(circlePath);
+          // Add any interactive logic as needed
+        });
+      }
+  
+      // Restore texts
+      if (layout.texts && svg) {
+        layout.texts.forEach((t: any) => {
+          const id = `Text${Date.now()}${Math.random()}`;
+          const textEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          textEl.setAttribute("x", t.x.toString());
+          textEl.setAttribute("y", t.y.toString());
+          textEl.setAttribute("font-size", t.fontSize.toString());
+          textEl.setAttribute("data-base-font-size", t.fontSize.toString());
+          textEl.setAttribute("fill", t.color);
+          textEl.setAttribute("text-anchor", "middle");
+          textEl.setAttribute("dominant-baseline", "middle");
+          textEl.textContent = t.content;
+          textEl.style.cursor = "move";
+          svg.appendChild(textEl);
+  
+          set((state) => ({
+            textElements: [
+              ...state.textElements,
+              {
+                id,
+                x: t.x,
+                y: t.y,
+                content: t.content,
+                fontSize: t.fontSize,
+                color: t.color,
+                element: textEl,
+              },
+            ],
+          }));
+  
+          textEl.addEventListener("mousedown", (e) => {
+            e.stopPropagation();
+            get().startTextDrag(id, e.clientX, e.clientY);
+          });
+          textEl.addEventListener("click", (e) => {
+            e.stopPropagation();
+            get().selectTextElement(id);
+          });
+        });
+      }
+  
+    } catch (e) {
+      alert('Invalid layout file');
+    }
+  },
+
+  setBgImage: (src) => set({ bgImage: src }),
+  setBgImageOpacity: (opacity) => set({ bgImageOpacity: opacity }),
+  //setBgImageVisible: (visible) => set({ bgImageVisible: visible }),
+  setBgImageFit: (fit) => set({ bgImageFit: fit }),
+  resetBgImage: () =>
+    set({
+      bgImage: null,
+      bgImageOpacity: 1,
+      bgImageVisible: true,
+      bgImageFit: "contain",
+    }),
 
   toggleTextMode: () => set((state) => ({ textMode: !state.textMode })),
 
@@ -346,6 +541,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       e.stopPropagation();
       get().selectTextElement(id);
     });
+    set({ textMode: false });
   },
 
   selectTextElement: (id: string | null) => {
@@ -687,12 +883,27 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       dragTarget: null,
     });
     get().deselectCirclePath();
+    // Remove center dot if present
+    const { selectedCirclePath } = get();
+    if (selectedCirclePath) {
+      const center = (selectedCirclePath as any)._centerHandle;
+      if (center) {
+        center.remove();
+        (selectedCirclePath as any)._centerHandle = undefined;
+      }
+    }
   },
 
   deleteCirclePath: (circlePath: SVGPathElement) => {
     circlePath.remove();
     const handle = (circlePath as any)._resizeHandle;
     if (handle) handle.remove();
+    // Remove center dot if present
+    const center = (circlePath as any)._centerHandle;
+    if (center) {
+      center.remove();
+      (circlePath as any)._centerHandle = undefined;
+    }
     const { selectedCirclePath } = get();
     if (selectedCirclePath === circlePath) {
       set({ selectedCirclePath: null });
@@ -1201,6 +1412,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
     get().updatePenPath(currentPenPath, true);
     get().clearPenPreview();
+    set({ penMode: false });
   },
 
   selectPenPath: (path: PenPath | null) => {

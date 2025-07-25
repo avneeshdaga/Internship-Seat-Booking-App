@@ -100,6 +100,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     updateCircleDrag,
     stopCircleDrag,
     deselectCirclePath,
+    deleteCirclePath,
 
     // Text
     textMode,
@@ -115,6 +116,11 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     updateTextDrag,
     stopTextDrag,
     updateTextFontSizeForZoom,
+
+    bgImage,
+    bgImageVisible,
+    bgImageOpacity,
+    bgImageFit,
   } = useSeatStore();
 
   const {
@@ -126,50 +132,78 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
   // Fix the escape key handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (mode === 'admin' && e.key === 'Delete' && selectedDesignerSeat) {
-        deleteSelectedSeat();
+      if (mode !== 'admin') return;
+
+      // DELETE key
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedDesignerSeat) deleteSelectedSeat();
+        else if (selectedPenPath) deletePenPath(selectedPenPath);
+        else if (selectedRectPath) deleteRectPath(selectedRectPath);
+        else if (selectedCirclePath) deleteCirclePath(selectedCirclePath);
+        else if (selectedTextElement) deleteTextElement(selectedTextElement);
       }
-      if (mode === 'admin' && e.key === 'Escape') {
-        selectDesignerSeat(null);
+
+      // ESCAPE key
+      if (e.key === 'Escape') {
+        if (selectedDesignerSeat) selectDesignerSeat(null);
+        if (selectedPenPath) deselectPenPath();
+        if (selectedRectPath) deselectRectPath();
+        if (selectedCirclePath) deselectCirclePath();
+        if (selectedTextElement) selectTextElement(null);
+      }
+
+      // Pen tool shortcuts
+      if (penMode && currentPenPath) {
+        if (e.key === 'Backspace' || e.key === 'Delete' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) {
+          e.preventDefault();
+          removePenPoint();
+        }
+      }
+
+      // Rotate selected pen path
+      if (selectedPenPath) {
+        if (e.key === 'ArrowLeft') rotatePenPath(selectedPenPath, -45);
+        if (e.key === 'ArrowRight') rotatePenPath(selectedPenPath, 45);
+      }
+
+      // Rotate selected rectangle
+      if (selectedRectPath) {
+        if (e.key === 'ArrowLeft') rotateRectPath(selectedRectPath, -90);
+        if (e.key === 'ArrowRight') rotateRectPath(selectedRectPath, 90);
       }
 
       if (mode === 'admin') {
-        // Pen tool shortcuts
-        if (penMode && currentPenPath) {
-          if (e.key === 'Backspace' || e.key === 'Delete' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z')) {
-            e.preventDefault();
-            removePenPoint();
-          }
-        }
-        // Rotate selected pen path
-        if (selectedPenPath) {
-          if (e.key === 'ArrowLeft') {
-            rotatePenPath(selectedPenPath, -45);
-          }
-          if (e.key === 'ArrowRight') {
-            rotatePenPath(selectedPenPath, 45);
-          }
-        }
-      }
-      if (mode === 'admin' && selectedRectPath) {
-        if (e.key === 'Delete' || e.key === 'Backspace') {
-          deleteRectPath(selectedRectPath);
-        }
-        if (e.key === 'Escape') {
-          deselectRectPath();
-        }
-        if (e.key === 'ArrowLeft') {
-          rotateRectPath(selectedRectPath, -90);
-        }
-        if (e.key === 'ArrowRight') {
-          rotateRectPath(selectedRectPath, 90);
-        }
+        updateTextFontSizeForZoom(designerZoomLevel);
+      } else {
+        updateTextFontSizeForZoom(userZoomLevel);
       }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [mode, selectedDesignerSeat, deleteSelectedSeat, selectDesignerSeat, penMode, currentPenPath, selectedPenPath]);
+  }, [
+    mode,
+    selectedDesignerSeat,
+    selectedPenPath,
+    selectedRectPath,
+    selectedCirclePath,
+    selectedTextElement,
+    deleteSelectedSeat,
+    deletePenPath,
+    deleteRectPath,
+    deleteCirclePath,
+    deleteTextElement,
+    selectDesignerSeat,
+    deselectPenPath,
+    deselectRectPath,
+    deselectCirclePath,
+    selectTextElement,
+    penMode,
+    currentPenPath,
+    removePenPoint,
+    rotatePenPath,
+    rotateRectPath,
+  ]);
 
   // Global drag handlers 
   useEffect(() => {
@@ -599,15 +633,12 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
 
   // Get cursor style based on current state
   const getCursor = () => {
-    if (isDragging) return 'grabbing';
-    if (penDragging) return 'grabbing';
-    if (isPathDragging) return 'grabbing';
-    if (isPanning || isDesignerPanning) return 'grabbing';
-    if (mode === 'admin') {
-      if (penMode) return 'crosshair';
-      if (addMode) return 'crosshair';
+    // Panning or dragging anything
+    if (isDragging || isPanning || isDesignerPanning || penDragging || isPathDragging || isRectPathDragging) {
+      return 'grabbing';
     }
-    return 'grab';
+    // Default for SVG background
+    return 'default';
   };
 
   return (
@@ -619,12 +650,11 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
             {mode === 'admin' && addMode && <span className="tool-indicator"> - Add Seat Mode</span>}
             {mode === 'admin' && penMode && <span className="tool-indicator"> - Pen Tool Mode</span>}
             {mode === 'admin' && rectMode && <span className="tool-indicator"> - Rect Tool Mode</span>}
-            {mode === 'admin' && shapeMode === 'circle' && <span className="tool-indicator"> - Circle Tool Mode</span>}
+            {mode === 'admin' && isDragging && dragTarget === "circle" && <span className="tool-indicator"> - Dragging Circle Path</span>}
             {mode === 'admin' && isDragging && selectedDesignerSeat && <span className="tool-indicator"> - Dragging Seat</span>}
             {mode === 'admin' && penDragging && <span className="tool-indicator"> - Dragging Handle</span>}
             {mode === 'admin' && isPathDragging && <span className="tool-indicator"> - Dragging Path</span>}
             {mode === 'admin' && isRectPathDragging && <span className="tool-indicator"> - Dragging Rect Path</span>}
-            {mode === 'admin' && isDragging && <span className="tool-indicator"> - Dragging Circle Path</span>}
           </h2>
           <ZoomControls mode={mode} />
         </div>
@@ -653,6 +683,24 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >
+            {mode === 'admin' && bgImage && bgImageVisible && (
+              <image
+                href={bgImage}
+                x="0"
+                y="0"
+                width="1000"
+                height="500"
+                opacity={bgImageOpacity}
+                preserveAspectRatio={
+                  bgImageFit === 'contain'
+                    ? 'xMidYMid meet'
+                    : bgImageFit === 'cover'
+                      ? 'xMidYMid slice'
+                      : 'none'
+                }
+                style={{ pointerEvents: 'none', userSelect: 'none' }}
+              />
+            )}
             {currentSeats.map((seat) => (
               <SVGSeat
                 key={seat.id}
@@ -683,7 +731,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
           ) : (
             <div className="admin-help">
               <p>🛠️ <strong>Admin Mode:</strong> Click seats to select, drag to move, use controls to zoom</p>
-              <p>⌨️ <strong>Shortcuts:</strong> Delete key to remove selected seat, Escape to deselect, Arrow keys to rotate selected path</p>
+              <p>⌨️ <strong>Shortcuts:</strong> Delete key to remove, Escape to deselect, Arrow keys to rotate selected path</p>
             </div>
           )}
         </div>
