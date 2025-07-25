@@ -64,6 +64,14 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
     updateCirclePathStrokeWidth,
     updateCirclePath,
     deleteCirclePath,
+
+    selectedTextElement,
+    selectTextElement,
+    textElements,
+    updateTextElementColor,
+    updateTextElementFontSize,
+    updateTextElementContent,
+    deleteTextElement,
   } = useSeatStore();
 
   // Local state for grid inputs (EXACT from React)
@@ -322,12 +330,12 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
               </button>
 
               <button
-                className={`tool-btn ${textMode ? 'active' : ''}`}
-                onClick={() => toggleMode('textMode')}
-                title="Add Text"
+                className={`tool-btn ${shapeMode === 'circle' ? 'active' : ''}`}
+                onClick={() => setShapeMode(shapeMode === 'circle' ? 'none' : 'circle')}
+                title="Add Circle"
               >
-                <span className="tool-icon">T</span>
-                <span className="tool-label">Add Text</span>
+                <span className="tool-icon">⭕</span>
+                <span className="tool-label">Circle</span>
               </button>
 
               <button
@@ -340,13 +348,14 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
               </button>
 
               <button
-                className={`tool-btn ${shapeMode === 'circle' ? 'active' : ''}`}
-                onClick={() => setShapeMode(shapeMode === 'circle' ? 'none' : 'circle')}
-                title="Add Circle"
+                className={`tool-btn ${textMode ? 'active' : ''}`}
+                onClick={() => toggleMode('textMode')}
+                title="Add Text"
               >
-                <span className="tool-icon">⭕</span>
-                <span className="tool-label">Circle</span>
+                <span className="tool-icon">📝</span>
+                <span className="tool-label">Add Text</span>
               </button>
+              
             </div>
           </div>
 
@@ -489,6 +498,61 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
             ) : (
               <p style={{ color: '#666', fontStyle: 'italic' }}>
                 Select a path or shape to access transform tools
+              </p>
+            )}
+          </div>
+
+          <div className="tool-section">
+            <h3>Text Controls</h3>
+            {selectedTextElement ? (
+              <div>
+                <div className="input-group">
+                  <label>
+                    Content:
+                    <input
+                      type="text"
+                      value={textElements.find(t => t.id === selectedTextElement)?.content || ''}
+                      onChange={e => updateTextElementContent(selectedTextElement, e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    Font Size:
+                    <select
+                      value={textElements.find(t => t.id === selectedTextElement)?.fontSize || 16}
+                      onChange={e => updateTextElementFontSize(selectedTextElement, parseInt(e.target.value))}
+                      style={{
+                        width: '80px',
+                        padding: '5px 10px',
+                        fontSize: '16px',
+                        borderRadius: '4px',
+                        border: '1px solid #ccc',
+                        marginLeft: '10px',
+                        background: '#fff'
+                      }}
+                    >
+                      {[8, 10, 12, 14, 16, 18, 20, 24, 28, 32].map(size => (
+                        <option key={size} value={size}>{size}px</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Color:
+                    <input
+                      type="color"
+                      value={textElements.find(t => t.id === selectedTextElement)?.color || '#000000'}
+                      onChange={e => updateTextElementColor(selectedTextElement, e.target.value)}
+                      style={{  width: '80px', height: '40px' }}
+                    />
+                  </label>
+                </div>
+                <div className="button-group">
+                  <button className="secondary-btn" onClick={() => selectTextElement(null)}>❌ Deselect</button>
+                  <button className="danger-btn" onClick={() => deleteTextElement(selectedTextElement)}>🗑️ Delete</button>
+                </div>
+              </div>
+            ) : (
+              <p style={{ color: '#666', fontStyle: 'italic' }}>
+                Select a text box to edit its properties
               </p>
             )}
           </div>

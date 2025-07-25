@@ -227,7 +227,24 @@ interface SeatState {
   deleteCirclePath: (circlePath: SVGPathElement) => void;
   deselectCirclePath: () => void;
   updateCirclePathStroke: (circlePath: SVGPathElement, color: string) => void;
-  updateCirclePathStrokeWidth: (circlePath: SVGPathElement, width: number) => void;
+  updateCirclePathStrokeWidth: (
+    circlePath: SVGPathElement,
+    width: number
+  ) => void;
+  selectedTextElement: string | null;
+  toggleTextMode: () => void;
+  addTextElement: (svg: SVGSVGElement, x: number, y: number) => void;
+  selectTextElement: (id: string | null) => void;
+  updateTextElement: (id: string, updates: Partial<TextElement>) => void;
+  deleteTextElement: (id: string) => void;
+  updateTextElementFontSize: (id: string, fontSize: number) => void;
+  updateTextElementColor: (id: string, color: string) => void;
+  updateTextElementContent: (id: string, content: string) => void;
+  moveTextElement: (id: string, x: number, y: number) => void;
+  startTextDrag: (id: string, clientX: number, clientY: number) => void;
+  updateTextDrag: (clientX: number, clientY: number) => void;
+  stopTextDrag: () => void;
+  updateTextFontSizeForZoom: (zoom: number) => void;
 }
 
 export const useSeatStore = create<SeatState>((set, get) => ({
@@ -285,11 +302,201 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   isRectPathDragging: false,
   rectPathDragStart: null,
 
+  selectedTextElement: null,
+
+  toggleTextMode: () => set((state) => ({ textMode: !state.textMode })),
+
+  addTextElement: (svg: SVGSVGElement, x: number, y: number) => {
+    const id = `Text${Date.now()}`;
+    const textEl = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "text"
+    );
+    textEl.setAttribute("x", x.toString());
+    textEl.setAttribute("y", y.toString());
+    textEl.setAttribute("font-size", "16");
+    textEl.setAttribute("data-base-font-size", "16");
+    textEl.setAttribute("fill", "#000");
+    textEl.setAttribute("text-anchor", "middle");
+    textEl.setAttribute("dominant-baseline", "middle");
+    textEl.textContent = "Edit text...";
+    textEl.style.cursor = "move";
+    svg.appendChild(textEl);
+
+    set((state) => ({
+      textElements: [
+        ...state.textElements,
+        {
+          id,
+          x,
+          y,
+          content: "Edit text...",
+          fontSize: 16,
+          color: "#000",
+          element: textEl,
+        },
+      ],
+      selectedTextElement: id,
+    }));
+    textEl.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      get().startTextDrag(id, e.clientX, e.clientY);
+    });
+    textEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      get().selectTextElement(id);
+    });
+  },
+
+  selectTextElement: (id: string | null) => {
+    set((state) => {
+      // Remove highlight from previous
+      if (state.selectedTextElement) {
+        const prev = state.textElements.find(
+          (t) => t.id === state.selectedTextElement
+        );
+        if (prev && prev.element) prev.element.setAttribute("stroke", "none");
+      }
+      // Add highlight to new
+      if (id) {
+        const next = state.textElements.find((t) => t.id === id);
+        if (next && next.element)
+          next.element.setAttribute("stroke", "#f32121ff");
+      }
+      return { selectedTextElement: id };
+    });
+  },
+
+  updateTextElement: (id: string, updates: Partial<TextElement>) => {
+    set((state) => ({
+      textElements: state.textElements.map((el) =>
+        el.id === id ? { ...el, ...updates } : el
+      ),
+    }));
+  },
+
+  deleteTextElement: (id: string) => {
+    set((state) => {
+      const el = state.textElements.find((t) => t.id === id);
+      if (el && el.element) el.element.remove();
+      return {
+        textElements: state.textElements.filter((t) => t.id !== id),
+        selectedTextElement:
+          state.selectedTextElement === id ? null : state.selectedTextElement,
+      };
+    });
+  },
+
+  updateTextElementFontSize: (id: string, fontSize: number) => {
+    set((state) => {
+      const el = state.textElements.find((t) => t.id === id);
+      if (el && el.element) {
+        el.element.setAttribute("font-size", fontSize.toString());
+        el.element.setAttribute("data-base-font-size", fontSize.toString());
+      }
+      return {
+        textElements: state.textElements.map((t) =>
+          t.id === id ? { ...t, fontSize } : t
+        ),
+      };
+    });
+  },
+
+  updateTextElementColor: (id: string, color: string) => {
+    set((state) => {
+      const el = state.textElements.find((t) => t.id === id);
+      if (el && el.element) {
+        el.element.setAttribute("fill", color);
+      }
+      return {
+        textElements: state.textElements.map((t) =>
+          t.id === id ? { ...t, color } : t
+        ),
+      };
+    });
+  },
+
+  updateTextFontSizeForZoom: (zoom: number) => {
+    set((state) => {
+      state.textElements.forEach((el) => {
+        const baseSize = Number(
+          el.element?.getAttribute("data-base-font-size") || el.fontSize
+        );
+        const newSize = baseSize / zoom;
+        el.element?.setAttribute("font-size", newSize.toString());
+      });
+      return {};
+    });
+  },
+
+  updateTextElementContent: (id: string, content: string) => {
+    set((state) => {
+      const el = state.textElements.find((t) => t.id === id);
+      if (el && el.element) {
+        el.element.textContent = content;
+      }
+      return {
+        textElements: state.textElements.map((t) =>
+          t.id === id ? { ...t, content } : t
+        ),
+      };
+    });
+  },
+
+  moveTextElement: (id: string, x: number, y: number) => {
+    set((state) => {
+      const el = state.textElements.find((t) => t.id === id);
+      if (el && el.element) {
+        el.element.setAttribute("x", x.toString());
+        el.element.setAttribute("y", y.toString());
+      }
+      return {
+        textElements: state.textElements.map((t) =>
+          t.id === id ? { ...t, x, y } : t
+        ),
+      };
+    });
+  },
+
+  startTextDrag: (id: string, clientX: number, clientY: number) => {
+    const el = get().textElements.find((t) => t.id === id);
+    if (!el) return;
+    set({
+      isDragging: true,
+      dragStart: { x: clientX, y: clientY, seatX: el.x, seatY: el.y },
+      dragTarget: id,
+      selectedTextElement: id,
+    });
+  },
+
+  updateTextDrag: (clientX: number, clientY: number) => {
+    const { dragStart, dragTarget, textElements } = get();
+    if (!dragStart || !dragTarget) return;
+    const dx = clientX - dragStart.x;
+    const dy = clientY - dragStart.y;
+    const el = textElements.find((t) => t.id === dragTarget);
+    if (!el) return;
+    get().moveTextElement(
+      dragTarget,
+      dragStart.seatX + dx,
+      dragStart.seatY + dy
+    );
+  },
+
+  stopTextDrag: () => {
+    set({
+      isDragging: false,
+      dragStart: null,
+      dragTarget: null,
+    });
+  },
+
   createCircle: (svg: SVGSVGElement, clientX: number, clientY: number) => {
     const svgCoords = getSVGCoordsFromClient(svg, clientX, clientY);
-    const cx = svgCoords.x, cy = svgCoords.y;
+    const cx = svgCoords.x,
+      cy = svgCoords.y;
     const r = 40;
-  
+
     // SVG path for circle
     const d = `
       M ${cx - r},${cy}
@@ -304,26 +511,29 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     path.setAttribute("data-prev-stroke", "#000");
     path.style.cursor = "pointer";
     svg.appendChild(path);
-  
+
     (path as any)._circleData = { cx, cy, r };
-  
+
     // --- ADD THIS BLOCK: create center point ---
-    const center = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    const center = document.createElementNS(
+      "http://www.w3.org/2000/svg",
+      "circle"
+    );
     center.setAttribute("cx", cx.toString());
     center.setAttribute("cy", cy.toString());
     center.setAttribute("r", "4");
-    center.setAttribute("fill", "#35383bff"); 
+    center.setAttribute("fill", "#35383bff");
     center.setAttribute("stroke", "#fff");
     center.setAttribute("stroke-width", "2");
     svg.appendChild(center);
-  
+
     // Optionally, store reference for future updates
     (path as any)._centerHandle = center;
-  
+
     get().addCircleResizeHandle(path);
     get().makeCirclePathInteractive(path);
     get().selectCirclePath(path);
-  
+
     set({ shapeMode: "none" });
   },
 
@@ -412,14 +622,14 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       a ${r},${r} 0 1,0 ${-2 * r},0
     `;
     circlePath.setAttribute("d", d);
-  
+
     // Update center handle position
     const center = (circlePath as any)._centerHandle;
     if (center) {
       center.setAttribute("cx", cx.toString());
       center.setAttribute("cy", cy.toString());
     }
-  
+
     // Update resize handle if present
     const handle = (circlePath as any)._resizeHandle;
     if (handle && handle._updateHandle) handle._updateHandle();
@@ -514,7 +724,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       circlePath.setAttribute("stroke", color);
     }
   },
-  
+
   updateCirclePathStrokeWidth: (circlePath: SVGPathElement, width: number) => {
     if (!circlePath) return;
     circlePath.setAttribute("stroke-width", width.toString());
