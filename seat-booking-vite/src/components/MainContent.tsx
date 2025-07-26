@@ -129,6 +129,11 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     handleWheelZoom
   } = useSVGUtils();
 
+  useEffect(() => {
+    if (mode !== 'admin') {
+      useSeatStore.getState().deselectAllDesignerObjects();
+    }
+  }, [mode]);
   // Fix the escape key handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -208,6 +213,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
   // Global drag handlers 
   useEffect(() => {
     const handleGlobalMouseMove = (e: MouseEvent) => {
+      if (mode !== 'admin') return;
       if (isDragging && dragTarget) {
         updateSeatDrag(e.clientX, e.clientY);
       }
@@ -259,6 +265,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     };
 
     const handleGlobalMouseUp = () => {
+      if (mode !== 'admin') return;
       if (isDragging) {
         stopSeatDrag();
       }
@@ -333,6 +340,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
   }, []);
 
   const handlePenElementClick = useCallback((e: React.MouseEvent, elementType: 'anchor' | 'handleIn' | 'handleOut', point: any) => {
+    if (mode !== 'admin') return;
     if (!svgRef.current) return;
     e.stopPropagation();
 
@@ -381,35 +389,44 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
 
   // SVG canvas click handler 
   const handleSVGClick = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-    // Only handle clicks on the SVG background itself
-    if (e.target !== svgRef.current) return;
+    const target = e.target as SVGElement;
+    const seatId = target.getAttribute('data-seat-id');
 
-    if (mode === 'admin' && addMode) {
-      // Add seat functionality
-      const svgCoords = getSVGCoords(e.clientX, e.clientY);
-      const seatId = getNextAvailableSeatId();
+    if (mode === 'user') {
+      // In user mode: Only allow selecting actual seats
+      if (seatId) {
+        handleSeatClick(seatId, e);
+      }
+      return; // Don't let user do anything else
+    }
 
-      // Create new seat with default properties
-      const newSeat: Seat = {
-        id: seatId,
-        cx: svgCoords.x,
-        cy: svgCoords.y,
-        r: 12, // Default radius
-        fill: '#4caf50', // Green for new seats
-        stroke: '#2e7d32',
-        occupied: false,
-        selected: false
-      };
+    // In admin mode
+    if (mode === 'admin') {
+      // Only allow actions on empty background (svg itself)
+      if (e.target !== svgRef.current) return;
 
-      // Add seat to store
-      addSeat(newSeat);
+      if (addMode) {
+        const svgCoords = getSVGCoords(e.clientX, e.clientY);
+        const seatId = getNextAvailableSeatId();
 
-      // Auto-select the new seat for editing
-      selectDesignerSeat(seatId);
+        const newSeat: Seat = {
+          id: seatId,
+          cx: svgCoords.x,
+          cy: svgCoords.y,
+          r: 12,
+          fill: '#4caf50',
+          stroke: '#2e7d32',
+          occupied: false,
+          selected: false
+        };
 
-      console.log('Added new seat:', seatId, 'at', svgCoords.x, svgCoords.y);
-    } else if (mode === 'admin') {
-      if (rectMode && e.target === svgRef.current) {
+        addSeat(newSeat);
+        selectDesignerSeat(seatId);
+        console.log('Added new seat:', seatId, 'at', svgCoords.x, svgCoords.y);
+        return;
+      }
+
+      if (rectMode) {
         createRectangle(svgRef.current, e.clientX, e.clientY);
         return;
       }
@@ -417,7 +434,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
         deselectRectPath();
       }
 
-      if (shapeMode === "circle" && e.target === svgRef.current) {
+      if (shapeMode === "circle") {
         createCircle(svgRef.current, e.clientX, e.clientY);
         return;
       }
@@ -428,7 +445,6 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       if (penMode) {
         if (!svgRef.current) return;
 
-        // Check if we're closing a path by clicking first point
         if (currentPenPath && currentPenPath.points.length > 1) {
           const firstPt = currentPenPath.points[0];
           const svgCoords = getSVGCoords(e.clientX, e.clientY);
@@ -440,7 +456,6 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
 
         clearPenPreview();
 
-        // Add new point
         if (currentPenPath) {
           addPenPoint(svgRef.current, e.clientX, e.clientY, e.shiftKey);
         } else {
@@ -449,12 +464,11 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
         return;
       }
 
-      // Deselect pen path on empty click
       if (selectedPenPath) {
         deselectPenPath();
       }
 
-      if (textMode && svgRef.current && e.target === svgRef.current) {
+      if (textMode) {
         const svgCoords = getSVGCoords(e.clientX, e.clientY);
         addTextElement(svgRef.current, svgCoords.x, svgCoords.y);
         return;
@@ -464,10 +478,37 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
         selectTextElement(null);
       }
 
-      // Click on empty space deselects current seat
+      // Deselect current seat on empty click
       selectDesignerSeat(null);
     }
-  }, [mode, addMode, getSVGCoords, getNextAvailableSeatId, addSeat, selectDesignerSeat, penMode, currentPenPath, selectedPenPath, clearPenPreview, finishPenPath, addPenPoint, startPenPath, deselectPenPath, createRectangle, rectMode, shapeMode, createCircle, selectedCirclePath, deselectCirclePath, textMode, addTextElement]);
+  }, [
+    mode,
+    addMode,
+    getSVGCoords,
+    getNextAvailableSeatId,
+    addSeat,
+    selectDesignerSeat,
+    penMode,
+    currentPenPath,
+    selectedPenPath,
+    clearPenPreview,
+    finishPenPath,
+    addPenPoint,
+    startPenPath,
+    deselectPenPath,
+    createRectangle,
+    rectMode,
+    shapeMode,
+    createCircle,
+    selectedCirclePath,
+    deselectCirclePath,
+    textMode,
+    addTextElement,
+    handleSeatClick,
+    svgRef,
+    selectedTextElement,
+    selectTextElement
+  ]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     // Pen tool: Check if starting handle creation using existing drag system
@@ -674,12 +715,36 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
             }}
             preserveAspectRatio="xMidYMid meet"
             onWheel={(e) => handleWheelZoom(e, mode === 'admin')}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
+            onMouseDown={(e) => {
+              if (mode !== 'admin') {
+                e.stopPropagation(); // ✅ Stop the click from reaching SVG
+                return;
+              }
+              handleMouseDown(e); // only call this in admin
+            }}
+            onMouseMove={(e) => {
+              if (mode !== 'admin') {
+                e.stopPropagation(); // ✅ Stop the click from reaching SVG
+                return;
+              }
+              handleMouseMove(e); // only call this in admin
+            }}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
-            onClick={handleSVGClick}
-            onTouchStart={handleTouchStart}
+            onClick={(e) => {
+              if (mode !== 'admin') {
+                e.stopPropagation(); // ✅ Stop the click from reaching SVG
+                return;
+              }
+              handleSVGClick(e); // only call this in admin
+            }}
+            onTouchStart={(e) => {
+              if (mode !== 'admin') {
+                e.stopPropagation(); // ✅ Stop the click from reaching SVG
+                return;
+              }
+              handleTouchStart(e); // only call this in admin
+            }}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
           >

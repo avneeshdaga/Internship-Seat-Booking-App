@@ -29,6 +29,7 @@ function getSVGCoordsFromClient(
 
 interface SeatState {
   // Constants & Core State
+  mode: "admin" | "user";
   svgNS: string;
   pricePerSeat: number;
   selectedSeats: Set<string>;
@@ -257,6 +258,7 @@ interface SeatState {
 
   exportLayout: () => string;
   importLayout: (layoutString: string, svg?: SVGSVGElement) => void;
+  deselectAllDesignerObjects: () => void;
 }
 
 export const useSeatStore = create<SeatState>((set, get) => ({
@@ -268,6 +270,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   seatMapType: "grid",
   lastSVGString: "",
   maxSelectableSeats: null,
+  mode: "admin",
 
   selectedDesignerSeat: null,
   addMode: false,
@@ -320,6 +323,16 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   //bgImageVisible: true,
   bgImageFit: "contain",
 
+  deselectAllDesignerObjects: () => {
+    set({
+      selectedPenPath: null,
+      selectedRectPath: null,
+      selectedCirclePath: null,
+      selectedTextElement: null,
+      selectedDesignerSeat: null,
+    });
+  },
+
   exportLayout: () => {
     const state = get();
     return JSON.stringify(
@@ -333,19 +346,23 @@ export const useSeatStore = create<SeatState>((set, get) => ({
             handleOut: pt.handleOut,
           })),
           closed: p.closed,
-          stroke: p.path?.getAttribute('data-prev-stroke') || '#000',
-          strokeWidth: p.path?.getAttribute('stroke-width') || '2',
+          stroke: p.path?.getAttribute("data-prev-stroke") || "#000",
+          strokeWidth: p.path?.getAttribute("stroke-width") || "2",
         })),
-        rects: Array.from(document.querySelectorAll('path[data-rect]')).map(path => ({
-          d: path.getAttribute('d'),
-          stroke: path.getAttribute('data-prev-stroke'),
-          strokeWidth: path.getAttribute('stroke-width'),
-        })),
-        circles: Array.from(document.querySelectorAll('path[data-circle]')).map(path => ({
-          d: path.getAttribute('d'),
-          stroke: path.getAttribute('data-prev-stroke'),
-          strokeWidth: path.getAttribute('stroke-width'),
-        })),
+        rects: Array.from(document.querySelectorAll("path[data-rect]")).map(
+          (path) => ({
+            d: path.getAttribute("d"),
+            stroke: path.getAttribute("data-prev-stroke"),
+            strokeWidth: path.getAttribute("stroke-width"),
+          })
+        ),
+        circles: Array.from(document.querySelectorAll("path[data-circle]")).map(
+          (path) => ({
+            d: path.getAttribute("d"),
+            stroke: path.getAttribute("data-prev-stroke"),
+            strokeWidth: path.getAttribute("stroke-width"),
+          })
+        ),
         texts: state.textElements.map((t) => ({
           x: t.x,
           y: t.y,
@@ -362,12 +379,12 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   importLayout: (layoutString: string, svg?: SVGSVGElement) => {
     try {
       const layout = JSON.parse(layoutString);
-  
+
       // Remove all SVG elements for pen paths, rects, circles, texts
       if (svg) {
         svg.querySelectorAll("path, text").forEach((el) => el.remove());
       }
-  
+
       // Restore seats
       set({
         currentSeats: layout.seats || [],
@@ -378,17 +395,20 @@ export const useSeatStore = create<SeatState>((set, get) => ({
         selectedCirclePath: null,
         selectedTextElement: null,
       });
-  
+
       // Restore pen paths
       if (layout.penPaths && svg) {
         layout.penPaths.forEach((p: any) => {
-          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          const path = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path"
+          );
           path.setAttribute("stroke", p.stroke || "#000");
           path.setAttribute("stroke-width", p.strokeWidth || "2");
           path.setAttribute("fill", "none");
           path.setAttribute("data-prev-stroke", p.stroke || "#000");
           svg.appendChild(path);
-  
+
           const points = p.points.map((pt: any) => ({
             x: pt.x,
             y: pt.y,
@@ -397,23 +417,26 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           }));
           const penPath = { points, path, closed: p.closed };
           get().updatePenPath(penPath, true);
-  
+
           path.style.cursor = "pointer";
           path.addEventListener("click", (e) => {
             e.stopPropagation();
             get().selectPenPath(penPath);
           });
-  
+
           set((state) => ({
             finishedPenPaths: [...state.finishedPenPaths, penPath],
           }));
         });
       }
-  
+
       // Restore rectangles
       if (layout.rects && svg) {
         layout.rects.forEach((r: any) => {
-          const rectPath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          const rectPath = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path"
+          );
           rectPath.setAttribute("d", r.d);
           rectPath.setAttribute("stroke", r.stroke || "#000");
           rectPath.setAttribute("stroke-width", r.strokeWidth || "2");
@@ -424,11 +447,14 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           // Add any interactive logic as needed
         });
       }
-  
+
       // Restore circles
       if (layout.circles && svg) {
         layout.circles.forEach((c: any) => {
-          const circlePath = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          const circlePath = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "path"
+          );
           circlePath.setAttribute("d", c.d);
           circlePath.setAttribute("stroke", c.stroke || "#000");
           circlePath.setAttribute("stroke-width", c.strokeWidth || "2");
@@ -439,12 +465,15 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           // Add any interactive logic as needed
         });
       }
-  
+
       // Restore texts
       if (layout.texts && svg) {
         layout.texts.forEach((t: any) => {
           const id = `Text${Date.now()}${Math.random()}`;
-          const textEl = document.createElementNS("http://www.w3.org/2000/svg", "text");
+          const textEl = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "text"
+          );
           textEl.setAttribute("x", t.x.toString());
           textEl.setAttribute("y", t.y.toString());
           textEl.setAttribute("font-size", t.fontSize.toString());
@@ -455,7 +484,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           textEl.textContent = t.content;
           textEl.style.cursor = "move";
           svg.appendChild(textEl);
-  
+
           set((state) => ({
             textElements: [
               ...state.textElements,
@@ -470,20 +499,21 @@ export const useSeatStore = create<SeatState>((set, get) => ({
               },
             ],
           }));
-  
+
           textEl.addEventListener("mousedown", (e) => {
+            if (get().mode !== "admin") return;
             e.stopPropagation();
             get().startTextDrag(id, e.clientX, e.clientY);
           });
           textEl.addEventListener("click", (e) => {
+            if (get().mode !== "admin") return;
             e.stopPropagation();
             get().selectTextElement(id);
           });
         });
       }
-  
     } catch (e) {
-      alert('Invalid layout file');
+      alert("Invalid layout file");
     }
   },
 
@@ -534,17 +564,26 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       selectedTextElement: id,
     }));
     textEl.addEventListener("mousedown", (e) => {
+      if (get().mode !== "admin") return;
       e.stopPropagation();
       get().startTextDrag(id, e.clientX, e.clientY);
     });
     textEl.addEventListener("click", (e) => {
+      if (get().mode !== "admin") return;
       e.stopPropagation();
       get().selectTextElement(id);
     });
+        // After creating textEl, add:
+    if (get().mode !== "admin") {
+      textEl.style.pointerEvents = "none";
+    } else {
+      textEl.style.pointerEvents = "auto";
+    }
     set({ textMode: false });
   },
 
   selectTextElement: (id: string | null) => {
+    if (get().mode !== "admin") return;
     set((state) => {
       // Remove highlight from previous
       if (state.selectedTextElement) {
@@ -734,6 +773,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   },
 
   selectCirclePath: (circlePath: SVGPathElement | null) => {
+    if (get().mode !== "admin") return;
     const { selectedCirclePath } = get();
     if (selectedCirclePath && selectedCirclePath !== circlePath) {
       const prev =
@@ -1039,6 +1079,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   },
 
   selectRectPath: (rectPath: SVGPathElement | null) => {
+    if (get().mode !== "admin") return;
     const { selectedRectPath } = get();
 
     if (selectedRectPath && selectedRectPath !== rectPath) {
@@ -1416,8 +1457,8 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   },
 
   selectPenPath: (path: PenPath | null) => {
+    if (get().mode !== "admin") return;
     const { selectedPenPath } = get();
-
     if (selectedPenPath && selectedPenPath !== path) {
       const prevStroke =
         selectedPenPath.path.getAttribute("data-prev-stroke") || "#000";
