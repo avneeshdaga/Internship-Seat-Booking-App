@@ -324,12 +324,20 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   bgImageFit: "contain",
 
   deselectAllDesignerObjects: () => {
+    // Clear selections
     set({
       selectedPenPath: null,
       selectedRectPath: null,
       selectedCirclePath: null,
       selectedTextElement: null,
       selectedDesignerSeat: null,
+    });
+
+    // Remove visual selection indicators
+    document.querySelectorAll('[data-selected="true"]').forEach((el) => {
+      el.removeAttribute("data-selected");
+      const prevStroke = el.getAttribute("data-prev-stroke") || "#000";
+      el.setAttribute("stroke", prevStroke);
     });
   },
 
@@ -407,6 +415,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           path.setAttribute("stroke-width", p.strokeWidth || "2");
           path.setAttribute("fill", "none");
           path.setAttribute("data-prev-stroke", p.stroke || "#000");
+          path.setAttribute("class", "designer-element");
           svg.appendChild(path);
 
           const points = p.points.map((pt: any) => ({
@@ -443,6 +452,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           rectPath.setAttribute("fill", "none");
           rectPath.setAttribute("data-rect", "true");
           rectPath.setAttribute("data-prev-stroke", r.stroke || "#000");
+          rectPath.setAttribute("class", "designer-element");
           svg.appendChild(rectPath);
           // Add any interactive logic as needed
         });
@@ -461,6 +471,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           circlePath.setAttribute("fill", "none");
           circlePath.setAttribute("data-circle", "true");
           circlePath.setAttribute("data-prev-stroke", c.stroke || "#000");
+          circlePath.setAttribute("class", "designer-element");
           svg.appendChild(circlePath);
           // Add any interactive logic as needed
         });
@@ -544,6 +555,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     textEl.setAttribute("fill", "#000");
     textEl.setAttribute("text-anchor", "middle");
     textEl.setAttribute("dominant-baseline", "middle");
+    textEl.setAttribute("class", "designer-element");
     textEl.textContent = "Edit text...";
     textEl.style.cursor = "move";
     svg.appendChild(textEl);
@@ -573,7 +585,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       e.stopPropagation();
       get().selectTextElement(id);
     });
-        // After creating textEl, add:
+    // After creating textEl, add:
     if (get().mode !== "admin") {
       textEl.style.pointerEvents = "none";
     } else {
@@ -744,6 +756,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     path.setAttribute("stroke-width", "2");
     path.setAttribute("fill", "none");
     path.setAttribute("data-prev-stroke", "#000");
+    path.setAttribute("class", "designer-element");
     path.style.cursor = "pointer";
     svg.appendChild(path);
 
@@ -1063,6 +1076,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     path.setAttribute("stroke-width", "2");
     path.setAttribute("fill", "none");
     path.setAttribute("data-prev-stroke", "#000"); // Store original color
+    path.setAttribute("class", "designer-element");
     path.style.cursor = "pointer";
 
     svg.appendChild(path);
@@ -1324,6 +1338,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     path.setAttribute("stroke-width", "2");
     path.setAttribute("fill", "none");
     path.setAttribute("data-prev-stroke", "#000");
+    path.setAttribute("class", "designer-element");
     svg.appendChild(path);
 
     const newPath: PenPath = {

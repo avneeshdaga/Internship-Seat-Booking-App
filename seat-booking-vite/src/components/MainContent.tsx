@@ -130,10 +130,31 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
   } = useSVGUtils();
 
   useEffect(() => {
-    if (mode !== 'admin') {
-      useSeatStore.getState().deselectAllDesignerObjects();
-    }
+    const handleModeChange = () => {
+      if (mode !== 'admin') {
+        // User mode
+        useSeatStore.getState().deselectAllDesignerObjects();
+
+        // Disable designer elements
+        document.querySelectorAll('.designer-element').forEach(el => {
+          el.classList.add('user-mode');
+        });
+
+        // Enable SVG canvas for panning
+        if (svgRef.current) {
+          svgRef.current.style.pointerEvents = 'auto';
+        }
+      } else {
+        // Admin mode
+        document.querySelectorAll('.designer-element').forEach(el => {
+          el.classList.remove('user-mode');
+        });
+      }
+    };
+
+    handleModeChange();
   }, [mode]);
+
   // Fix the escape key handler
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -393,11 +414,18 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     const seatId = target.getAttribute('data-seat-id');
 
     if (mode === 'user') {
+      // Allow panning when clicking on SVG background
+      if (target === svgRef.current) return;
+
+      // Block clicks on designer elements
+      if (target.closest('.designer-element')) {
+        e.stopPropagation();
+        return;
+      }
       // In user mode: Only allow selecting actual seats
       if (seatId) {
         handleSeatClick(seatId, e);
       }
-      return; // Don't let user do anything else
     }
 
     // In admin mode
@@ -716,18 +744,10 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
             preserveAspectRatio="xMidYMid meet"
             onWheel={(e) => handleWheelZoom(e, mode === 'admin')}
             onMouseDown={(e) => {
-              if (mode !== 'admin') {
-                e.stopPropagation(); // ✅ Stop the click from reaching SVG
-                return;
-              }
-              handleMouseDown(e); // only call this in admin
+              handleMouseDown(e); // Allow panning in both modes
             }}
             onMouseMove={(e) => {
-              if (mode !== 'admin') {
-                e.stopPropagation(); // ✅ Stop the click from reaching SVG
-                return;
-              }
-              handleMouseMove(e); // only call this in admin
+              handleMouseMove(e); // Allow panning in both modes
             }}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseLeave}
