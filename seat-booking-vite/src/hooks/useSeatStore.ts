@@ -388,55 +388,58 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     try {
       const layout = JSON.parse(layoutString);
 
-      // Remove all SVG elements for pen paths, rects, circles, texts
+      // Clear existing elements
       if (svg) {
-        svg.querySelectorAll("path, text").forEach((el) => el.remove());
+        // Remove only designer elements, keep the SVG itself
+        svg.querySelectorAll(".designer-element").forEach((el) => el.remove());
       }
 
       // Restore seats
-      set({
-        currentSeats: layout.seats || [],
-        finishedPenPaths: [],
-        textElements: [],
-        selectedPenPath: null,
-        selectedRectPath: null,
-        selectedCirclePath: null,
-        selectedTextElement: null,
-      });
+      set({ currentSeats: layout.seats || [] });
 
       // Restore pen paths
       if (layout.penPaths && svg) {
+        const restoredPaths: PenPath[] = [];
+
         layout.penPaths.forEach((p: any) => {
           const path = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "path"
           );
+          path.setAttribute("class", "designer-element");
+
+          // Set path attributes
           path.setAttribute("stroke", p.stroke || "#000");
           path.setAttribute("stroke-width", p.strokeWidth || "2");
           path.setAttribute("fill", "none");
           path.setAttribute("data-prev-stroke", p.stroke || "#000");
-          path.setAttribute("class", "designer-element");
+
           svg.appendChild(path);
 
+          // Recreate points structure
           const points = p.points.map((pt: any) => ({
             x: pt.x,
             y: pt.y,
             handleIn: pt.handleIn,
             handleOut: pt.handleOut,
           }));
-          const penPath = { points, path, closed: p.closed };
-          get().updatePenPath(penPath, true);
 
-          path.style.cursor = "pointer";
+          const penPath: PenPath = {
+            points,
+            path,
+            closed: p.closed,
+          };
+
+          // Reattach click handler
           path.addEventListener("click", (e) => {
             e.stopPropagation();
             get().selectPenPath(penPath);
           });
 
-          set((state) => ({
-            finishedPenPaths: [...state.finishedPenPaths, penPath],
-          }));
+          restoredPaths.push(penPath);
         });
+
+        set({ finishedPenPaths: restoredPaths });
       }
 
       // Restore rectangles
@@ -447,14 +450,30 @@ export const useSeatStore = create<SeatState>((set, get) => ({
             "path"
           );
           rectPath.setAttribute("d", r.d);
-          rectPath.setAttribute("stroke", r.stroke || "#000");
-          rectPath.setAttribute("stroke-width", r.strokeWidth || "2");
+          rectPath.setAttribute("stroke", r.stroke);
+          rectPath.setAttribute("stroke-width", r.strokeWidth);
           rectPath.setAttribute("fill", "none");
           rectPath.setAttribute("data-rect", "true");
-          rectPath.setAttribute("data-prev-stroke", r.stroke || "#000");
+          rectPath.setAttribute("data-prev-stroke", r.stroke);
           rectPath.setAttribute("class", "designer-element");
           svg.appendChild(rectPath);
-          // Add any interactive logic as needed
+
+          // Recreate rectangle points structure
+          const pathData = r.d.split(/[ ,]/).filter((x: string) => x);
+          const points = [];
+          for (let i = 1; i < pathData.length; i += 2) {
+            points.push({
+              x: parseFloat(pathData[i]),
+              y: parseFloat(pathData[i + 1]),
+            });
+          }
+          (rectPath as any)._rectPoints = points;
+
+          // Reattach event handlers
+          rectPath.addEventListener("click", (e) => {
+            e.stopPropagation();
+            get().selectRectPath(rectPath);
+          });
         });
       }
 
@@ -466,65 +485,80 @@ export const useSeatStore = create<SeatState>((set, get) => ({
             "path"
           );
           circlePath.setAttribute("d", c.d);
-          circlePath.setAttribute("stroke", c.stroke || "#000");
-          circlePath.setAttribute("stroke-width", c.strokeWidth || "2");
+          circlePath.setAttribute("stroke", c.stroke);
+          circlePath.setAttribute("stroke-width", c.strokeWidth);
           circlePath.setAttribute("fill", "none");
           circlePath.setAttribute("data-circle", "true");
-          circlePath.setAttribute("data-prev-stroke", c.stroke || "#000");
+          circlePath.setAttribute("data-prev-stroke", c.stroke);
           circlePath.setAttribute("class", "designer-element");
           svg.appendChild(circlePath);
-          // Add any interactive logic as needed
+
+          // Extract circle data from path
+          const matches = c.d.match(/M ([\d.-]+),([\d.-]+) a ([\d.-]+),/);
+          if (matches) {
+            (circlePath as any)._circleData = {
+              cx: parseFloat(matches[1]) + parseFloat(matches[3]),
+              cy: parseFloat(matches[2]),
+              r: parseFloat(matches[3]),
+            };
+          }
+
+          // Reattach event handlers
+          circlePath.addEventListener("click", (e) => {
+            e.stopPropagation();
+            get().selectCirclePath(circlePath);
+          });
         });
       }
 
-      // Restore texts
+      // Restore text elements
       if (layout.texts && svg) {
+        const restoredTexts: TextElement[] = [];
+
         layout.texts.forEach((t: any) => {
-          const id = `Text${Date.now()}${Math.random()}`;
           const textEl = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "text"
           );
-          textEl.setAttribute("x", t.x.toString());
-          textEl.setAttribute("y", t.y.toString());
-          textEl.setAttribute("font-size", t.fontSize.toString());
-          textEl.setAttribute("data-base-font-size", t.fontSize.toString());
+          textEl.setAttribute("x", t.x);
+          textEl.setAttribute("y", t.y);
+          textEl.setAttribute("font-size", t.fontSize);
           textEl.setAttribute("fill", t.color);
           textEl.setAttribute("text-anchor", "middle");
           textEl.setAttribute("dominant-baseline", "middle");
           textEl.textContent = t.content;
-          textEl.style.cursor = "move";
+          textEl.setAttribute("class", "designer-element");
           svg.appendChild(textEl);
 
-          set((state) => ({
-            textElements: [
-              ...state.textElements,
-              {
-                id,
-                x: t.x,
-                y: t.y,
-                content: t.content,
-                fontSize: t.fontSize,
-                color: t.color,
-                element: textEl,
-              },
-            ],
-          }));
-
+          // Reattach event handlers
           textEl.addEventListener("mousedown", (e) => {
             if (get().mode !== "admin") return;
             e.stopPropagation();
-            get().startTextDrag(id, e.clientX, e.clientY);
+            get().startTextDrag(t.id, e.clientX, e.clientY);
           });
+
           textEl.addEventListener("click", (e) => {
             if (get().mode !== "admin") return;
             e.stopPropagation();
-            get().selectTextElement(id);
+            get().selectTextElement(t.id);
+          });
+
+          restoredTexts.push({
+            id: t.id || Math.random().toString(36).slice(2),
+            x: t.x,
+            y: t.y,
+            content: t.content,
+            fontSize: t.fontSize,
+            color: t.color,
+            element: textEl,
           });
         });
+
+        set({ textElements: restoredTexts });
       }
     } catch (e) {
-      alert("Invalid layout file");
+      console.error("Import failed:", e);
+      alert("Invalid layout file or import error");
     }
   },
 

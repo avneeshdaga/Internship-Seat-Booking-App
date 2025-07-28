@@ -696,7 +696,13 @@ const Sidebar: React.FC<SidebarProps> = ({ mode }) => {
                     if (!file) return;
                     const reader = new FileReader();
                     reader.onload = ev => {
-                      importLayout(ev.target?.result as string, svgRef.current!);
+                      // Get the SVG element directly from the DOM
+                      const svg = document.querySelector('.seat-canvas') as SVGSVGElement | null;
+                      if (!svg) {
+                        alert('SVG canvas not found!');
+                        return;
+                      }
+                      importLayout(ev.target?.result as string, svg);
                     };
                     reader.readAsText(file);
                   }}
