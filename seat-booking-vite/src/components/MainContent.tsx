@@ -294,8 +294,8 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       if (isPathDragging) {
         stopPathDrag();
       }
-      if (isRectPathDragging) {
-        stopRectPathDrag();
+      if (isRectPathDragging && selectedRectPath) {
+        stopRectPathDrag(selectedRectPath);
       }
       if (isDragging && dragTarget === "circle") {
         stopCircleDrag();
@@ -324,7 +324,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     penDragging, isPathDragging, isRectPathDragging,
     penMode, currentPenPath, selectedPenPath, selectedRectPath,
     updatePenDrag, stopPenDrag, updatePathDrag, stopPathDrag,
-    stopRectPathDrag, checkPenPathSnap]);
+    stopRectPathDrag, checkPenPathSnap, selectedRectPath]);
 
   // Generate next available seat ID (Phase 4)
   const getNextAvailableSeatId = useCallback((): string => {

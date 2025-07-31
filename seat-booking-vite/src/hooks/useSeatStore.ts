@@ -106,11 +106,13 @@ interface SeatState {
   currentSeats: Seat[];
   textElements: TextElement[];
   rectangles: {
+    id: string;
     points: { x: number; y: number }[];
     stroke: string;
     strokeWidth: string;
   }[];
   circles: {
+    id: string;
     center: { cx: number; cy: number; r: number };
     stroke: string;
     strokeWidth: string;
@@ -230,6 +232,7 @@ interface SeatState {
     x: number;
     y: number;
     points: { x: number; y: number }[];
+    id: string;
   } | null;
   updateRectPathStroke: (rectPath: SVGPathElement, color: string) => void;
   updateRectPathStrokeWidth: (rectPath: SVGPathElement, width: number) => void;
@@ -239,7 +242,7 @@ interface SeatState {
     clientX: number,
     clientY: number
   ) => void;
-  stopRectPathDrag: () => void;
+  stopRectPathDrag: (path: SVGPathElement) => void;
   createCircle: (svg: SVGSVGElement, clientX: number, clientY: number) => void;
   selectCirclePath: (circlePath: SVGPathElement | null) => void;
   addCircleResizeHandle: (circlePath: SVGPathElement) => void;
@@ -519,9 +522,28 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           circlePath.setAttribute("data-circle", "true");
           circlePath.setAttribute("data-prev-stroke", c.stroke || "#000000");
           circlePath.setAttribute("class", "designer-element");
+          circlePath.setAttribute("id", c.id);
           svg.appendChild(circlePath);
 
           (circlePath as any)._circleData = { cx, cy, r };
+
+          // Add center dot if present
+          const centerX = c.centerDotX ?? cx;
+          const centerY = c.centerDotY ?? cy;
+          const centerDot = document.createElementNS(
+            "http://www.w3.org/2000/svg",
+            "circle"
+          );
+          centerDot.setAttribute("cx", centerX.toString());
+          centerDot.setAttribute("cy", centerY.toString());
+          centerDot.setAttribute("r", "4");
+          centerDot.setAttribute("fill", "#35383bff");
+          centerDot.setAttribute("stroke", "#fff");
+          centerDot.setAttribute("stroke-width", "2");
+          svg.appendChild(centerDot);
+
+          // Attach reference for dragging logic
+          (circlePath as any)._centerHandle = centerDot;
 
           // Add handles and interaction
           get().addCircleResizeHandle(circlePath);
@@ -837,6 +859,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       a ${r},${r} 0 1,0 ${2 * r},0
       a ${r},${r} 0 1,0 ${-2 * r},0
     `;
+    const id = `circle-${Date.now()}`;
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", d);
     path.setAttribute("stroke", "#000000");
@@ -844,6 +867,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     path.setAttribute("fill", "none");
     path.setAttribute("data-prev-stroke", "#000000");
     path.setAttribute("class", "designer-element");
+    path.setAttribute("id", id);
     path.style.cursor = "pointer";
     svg.appendChild(path);
 
@@ -873,6 +897,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       circles: [
         ...state.circles,
         {
+          id,
           center: { cx, cy, r },
           stroke: "#000000",
           strokeWidth: "2",
@@ -958,47 +983,49 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     });
   },
 
-  updateCirclePath: (circlePath: SVGPathElement) => {
-    const data = (circlePath as any)._circleData;
+  updateCirclePath: (path: SVGPathElement) => {
+    const data = (path as any)._circleData;
     if (!data) return;
     const { cx, cy, r } = data;
+
+    // SVG arc path for full circle
     const d = `
-      M ${cx - r},${cy}
-      a ${r},${r} 0 1,0 ${2 * r},0
-      a ${r},${r} 0 1,0 ${-2 * r},0
-    `;
-    circlePath.setAttribute("d", d);
+    M ${cx - r}, ${cy}
+    a ${r},${r} 0 1,0 ${2 * r},0
+    a ${r},${r} 0 1,0 -${2 * r},0
+  `;
+    path.setAttribute("d", d.trim());
 
     // Update center handle position
-    const center = (circlePath as any)._centerHandle;
+    const center = (path as any)._centerHandle;
     if (center) {
       center.setAttribute("cx", cx.toString());
       center.setAttribute("cy", cy.toString());
     }
 
-    // Update resize handle if present
-    const handle = (circlePath as any)._resizeHandle;
+    // Update resize handle position
+    const handle = (path as any)._resizeHandle;
     if (handle && handle._updateHandle) handle._updateHandle();
 
+    // Update store's circle if match found
     set((state) => ({
       circles: state.circles.map((circle) =>
-        // Match by previous cx, cy, r (before move/resize)
-        (circlePath as any)._lastCircleData &&
-        circle.center.cx === (circlePath as any)._lastCircleData.cx &&
-        circle.center.cy === (circlePath as any)._lastCircleData.cy &&
-        circle.center.r === (circlePath as any)._lastCircleData.r
+        (path as any)._lastCircleData &&
+        circle.center.cx === (path as any)._lastCircleData.cx &&
+        circle.center.cy === (path as any)._lastCircleData.cy &&
+        circle.center.r === (path as any)._lastCircleData.r
           ? {
               ...circle,
               center: { cx, cy, r },
-              stroke: circlePath.getAttribute("stroke") || "#000000",
-              strokeWidth: circlePath.getAttribute("stroke-width") || "2",
+              stroke: path.getAttribute("stroke") || "#000000",
+              strokeWidth: path.getAttribute("stroke-width") || "2",
             }
           : circle
       ),
     }));
 
-    // Store last data for next update
-    (circlePath as any)._lastCircleData = { cx, cy, r };
+    // Store current state as last state
+    (path as any)._lastCircleData = { cx, cy, r };
   },
 
   makeCirclePathInteractive: (circlePath: SVGPathElement) => {
@@ -1047,21 +1074,41 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   },
 
   stopCircleDrag: () => {
+    const { selectedCirclePath, circles } = get();
+
+    if (selectedCirclePath) {
+      const data = (selectedCirclePath as any)._circleData;
+      const center = (selectedCirclePath as any)._centerHandle;
+
+      if (data && selectedCirclePath.id) {
+        const newCx = data.cx;
+        const newCy = data.cy;
+        const newR = data.r;
+
+        set({
+          circles: circles.map((circle) =>
+            circle.id === selectedCirclePath.id
+              ? {
+                  ...circle,
+                  center: { cx: newCx, cy: newCy, r: newR },
+                  centerDotX: center?.cx?.baseVal?.value ?? newCx,
+                  centerDotY: center?.cy?.baseVal?.value ?? newCy,
+                }
+              : circle
+          ),
+        });
+
+        get().updateCirclePath(selectedCirclePath); // ensures the <path> element reflects new cx, cy
+      }
+    }
+
+    get().deselectCirclePath();
+
     set({
       isDragging: false,
       dragStart: null,
       dragTarget: null,
     });
-    get().deselectCirclePath();
-    // Remove center dot if present
-    const { selectedCirclePath } = get();
-    if (selectedCirclePath) {
-      const center = (selectedCirclePath as any)._centerHandle;
-      if (center) {
-        center.remove();
-        (selectedCirclePath as any)._centerHandle = undefined;
-      }
-    }
   },
 
   deleteCirclePath: (circlePath: SVGPathElement) => {
@@ -1147,10 +1194,12 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     clientY: number
   ) => {
     const points = (rectPath as any)._rectPoints;
-    if (!points) return;
+    const id = rectPath.id;
+    if (!points || !id) return;
     set({
       isRectPathDragging: true,
       rectPathDragStart: {
+        id,
         x: clientX,
         y: clientY,
         points: points.map((pt: any) => ({ ...pt })),
@@ -1158,12 +1207,27 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     });
   },
 
-  stopRectPathDrag: () => {
-    set({
-      isRectPathDragging: false,
-      rectPathDragStart: null,
-    });
-    get().deselectRectPath();
+  stopRectPathDrag: (path: SVGPathElement) => {
+    const id = path.id;
+    const updatedPoints = (path as any)._rectPoints as {
+      x: number;
+      y: number;
+    }[];
+
+    if (!id || !updatedPoints) return;
+
+    set((state) => ({
+      rectangles: state.rectangles.map((rect) =>
+        rect.id === id
+          ? {
+              ...rect,
+              points: updatedPoints.map((pt) => ({ ...pt })), // Update with new dragged points
+            }
+          : rect
+      ),
+      dragging: false,
+      selectedId: null,
+    }));
   },
 
   syncRectanglesState: (
@@ -1234,7 +1298,6 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     const cx = svgCoords.x,
       cy = svgCoords.y;
 
-    // Rectangle corners (clockwise from top-left) - exactly like vanilla
     const points = [
       { x: cx - w / 2, y: cy - h / 2 },
       { x: cx + w / 2, y: cy - h / 2 },
@@ -1242,24 +1305,24 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       { x: cx - w / 2, y: cy + h / 2 },
     ];
 
-    // Create path data - exactly like vanilla
     const d = `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y} L ${points[2].x} ${points[2].y} L ${points[3].x} ${points[3].y} Z`;
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    const id = `rect-${Date.now()}`; //  Consistent ID
+
     path.setAttribute("d", d);
     path.setAttribute("stroke", "#000000");
     path.setAttribute("stroke-width", "2");
     path.setAttribute("fill", "none");
-    path.setAttribute("data-prev-stroke", "#000000"); // Store original color
+    path.setAttribute("data-prev-stroke", "#000000");
     path.setAttribute("class", "designer-element");
+    path.setAttribute("id", id); //  Set the same ID on the SVG element
     path.style.cursor = "pointer";
 
     svg.appendChild(path);
 
-    // Store points for manipulation BEFORE adding any interaction - exactly like vanilla
     (path as any)._rectPoints = points;
 
-    // Add resize handle and interaction
     get().addRectResizeHandle(path);
     get().makeRectPathInteractive(path);
     get().selectRectPath(path);
@@ -1268,6 +1331,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       rectangles: [
         ...state.rectangles,
         {
+          id, //  Match the path's ID
           points: points.map((pt) => ({ ...pt })),
           stroke: "#000000",
           strokeWidth: "2",
