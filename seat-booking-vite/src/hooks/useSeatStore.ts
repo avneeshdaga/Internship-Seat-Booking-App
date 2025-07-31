@@ -601,7 +601,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   toggleTextMode: () => set((state) => ({ textMode: !state.textMode })),
 
   addTextElement: (svg: SVGSVGElement, x: number, y: number) => {
-    const id = `Text${Date.now()}`;
+    const id = `text-${Date.now()}`;
     const textEl = document.createElementNS(
       "http://www.w3.org/2000/svg",
       "text"
@@ -611,27 +611,27 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     textEl.setAttribute("x", x.toString());
     textEl.setAttribute("y", y.toString());
     textEl.setAttribute("font-size", "16");
-    textEl.setAttribute("data-base-font-size", "16");
     textEl.setAttribute("fill", "#000000");
     textEl.setAttribute("text-anchor", "middle");
     textEl.setAttribute("dominant-baseline", "middle");
     textEl.setAttribute("class", "designer-element");
-    textEl.textContent = "Edit text...";
-
-    // Add drag-related attributes
     textEl.setAttribute("data-text-id", id);
-    textEl.style.cursor = "move";
+    textEl.textContent = "Edit text";
 
-    svg.appendChild(textEl);
-
-    // Add event listeners for dragging
+    // Add selection and drag handlers
     textEl.addEventListener("mousedown", (e) => {
       if (get().mode !== "admin") return;
       e.stopPropagation();
       get().startTextDrag(id, e.clientX, e.clientY);
     });
 
-    set({ textMode: false });
+    textEl.addEventListener("click", (e) => {
+      if (get().mode !== "admin") return;
+      e.stopPropagation();
+      get().selectTextElement(id);
+    });
+
+    svg.appendChild(textEl);
 
     set((state) => ({
       textElements: [
@@ -640,13 +640,14 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           id,
           x,
           y,
-          content: "Edit text...",
+          content: "Edit text",
           fontSize: 16,
           color: "#000000",
           element: textEl,
         },
       ],
       selectedTextElement: id,
+      textMode: false,
     }));
   },
 
@@ -786,15 +787,9 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     });
   },
 
-  updateTextDrag: (clientX: number, clientY: number) => {
+  updateTextDrag: (clientX, clientY) => {
     const { dragTarget, textDragStart, textElements } = get();
-    if (
-      !dragTarget ||
-      !textDragStart ||
-      textDragStart.textX === undefined ||
-      textDragStart.textY === undefined
-    )
-      return;
+    if (!dragTarget || !textDragStart) return;
 
     const text = textElements.find((t) => t.id === dragTarget);
     if (!text || !text.element) return;
@@ -811,6 +806,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     const newX = textDragStart.textX + dx;
     const newY = textDragStart.textY + dy;
 
+    // Update both DOM and state
     text.element.setAttribute("x", newX.toString());
     text.element.setAttribute("y", newY.toString());
 

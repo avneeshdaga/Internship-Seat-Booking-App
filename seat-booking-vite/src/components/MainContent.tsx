@@ -236,7 +236,8 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
         updateSeatDrag(e.clientX, e.clientY);
       }
 
-      if (isDragging && dragTarget && dragStart) {
+      if (isDragging && dragTarget && typeof dragTarget === 'string' &&
+        dragTarget.startsWith('text-')) {
         updateTextDrag(e.clientX, e.clientY);
       }
 
@@ -299,7 +300,8 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       if (isDragging && dragTarget === "circle") {
         stopCircleDrag();
       }
-      if (isDragging && dragTarget === "text" && selectedTextElement) {
+      if (isDragging && dragTarget && typeof dragTarget === 'string' &&
+        dragTarget.startsWith('text-')) {
         stopTextDrag();
       }
     };
