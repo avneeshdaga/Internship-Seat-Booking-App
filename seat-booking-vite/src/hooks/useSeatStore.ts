@@ -27,6 +27,19 @@ function getSVGCoordsFromClient(
   return { x: clientX, y: clientY };
 }
 
+export interface CircleElement {
+  id: string;
+  center: {
+    cx: number;
+    cy: number;
+    r: number;
+  };
+  stroke: string;
+  strokeWidth: string;
+  centerDotX?: number;
+  centerDotY?: number;
+}
+
 interface SeatState {
   // Constants & Core State
   mode: "admin" | "user";
@@ -111,12 +124,7 @@ interface SeatState {
     stroke: string;
     strokeWidth: string;
   }[];
-  circles: {
-    id: string;
-    center: { cx: number; cy: number; r: number };
-    stroke: string;
-    strokeWidth: string;
-  }[];
+  circles: CircleElement[];
 
   bgImage: string | null;
   bgImageOpacity: number;
@@ -395,7 +403,15 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           strokeWidth: p.path?.getAttribute("stroke-width") || "2",
         })),
         rects: state.rectangles,
-        circles: state.circles,
+        circles: state.circles.map((c) => ({
+          id: c.id,
+          center: c.center,
+          stroke: c.stroke,
+          strokeWidth: c.strokeWidth,
+          centerDotX: c.centerDotX,
+          centerDotY: c.centerDotY,
+        })),
+
         texts: state.textElements.map((t) => ({
           id: t.id,
           x: t.x,
@@ -503,6 +519,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
       // Restore circles
       if (layout.circles && svg) {
+        const restoredCircles: CircleElement[] = [];
         layout.circles.forEach((c: any) => {
           if (!c.center) return;
           const { cx, cy, r } = c.center;
@@ -553,8 +570,14 @@ export const useSeatStore = create<SeatState>((set, get) => ({
             e.stopPropagation();
             get().selectCirclePath(circlePath);
           });
+          restoredCircles.push({
+            id: c.id,
+            center: { cx, cy, r },
+            stroke: c.stroke || "#000000",
+            strokeWidth: c.strokeWidth || "2",
+          });
         });
-        set({ circles: layout.circles || [], selectedCirclePath: null });
+        set({ circles: restoredCircles, selectedCirclePath: null });
       }
 
       // Restore text elements
@@ -909,25 +932,34 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
   selectCirclePath: (circlePath: SVGPathElement | null) => {
     if (get().mode !== "admin") return;
+
     const { selectedCirclePath } = get();
+
+    // Deselect previous circle if different from new selection
     if (selectedCirclePath && selectedCirclePath !== circlePath) {
-      const prev =
+      const prevStroke =
         selectedCirclePath.getAttribute("data-prev-stroke") || "#000000";
-      selectedCirclePath.setAttribute("stroke", prev);
+      selectedCirclePath.setAttribute("stroke", prevStroke);
+
+      // Remove resize handle if exists
       const handle = (selectedCirclePath as any)._resizeHandle;
-      if (handle) {
-        handle.remove();
-        (selectedCirclePath as any)._resizeHandle = undefined;
-      }
+      if (handle) handle.remove();
     }
+
     if (circlePath) {
-      circlePath.setAttribute(
-        "data-prev-stroke",
-        circlePath.getAttribute("stroke") || "#000000"
-      );
+      // Store current stroke as previous stroke if not already set
+      if (!circlePath.getAttribute("data-prev-stroke")) {
+        const currentStroke = circlePath.getAttribute("stroke") || "#000000";
+        circlePath.setAttribute("data-prev-stroke", currentStroke);
+      }
+
+      // Set selection color
       circlePath.setAttribute("stroke", "#f44336");
+
+      // Add resize handle
       get().addCircleResizeHandle(circlePath);
     }
+
     set({ selectedCirclePath: circlePath });
   },
 
@@ -1130,14 +1162,14 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   deselectCirclePath: () => {
     const { selectedCirclePath } = get();
     if (selectedCirclePath) {
-      const prev =
+      const prevStroke =
         selectedCirclePath.getAttribute("data-prev-stroke") || "#000000";
-      selectedCirclePath.setAttribute("stroke", prev);
+      selectedCirclePath.setAttribute("stroke", prevStroke);
+
+      // Remove resize handle
       const handle = (selectedCirclePath as any)._resizeHandle;
-      if (handle) {
-        handle.remove();
-        (selectedCirclePath as any)._resizeHandle = undefined;
-      }
+      if (handle) handle.remove();
+
       set({ selectedCirclePath: null });
     }
   },
