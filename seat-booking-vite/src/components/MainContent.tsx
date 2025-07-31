@@ -49,6 +49,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     // Phase 4: Enhanced drag state
     isDragging,
     dragTarget,
+    dragStart,
     startSeatDrag,
     updateSeatDrag,
     stopSeatDrag,
@@ -108,9 +109,6 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     textElements,
     selectedTextElement,
     selectTextElement,
-    updateTextElement,
-    updateTextElementContent,
-    moveTextElement,
     deleteTextElement,
     startTextDrag,
     updateTextDrag,
@@ -166,7 +164,6 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
         else if (selectedPenPath) deletePenPath(selectedPenPath);
         else if (selectedRectPath) deleteRectPath(selectedRectPath);
         else if (selectedCirclePath) deleteCirclePath(selectedCirclePath);
-        else if (selectedTextElement) deleteTextElement(selectedTextElement);
       }
 
       // ESCAPE key
@@ -238,6 +235,11 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       if (isDragging && dragTarget) {
         updateSeatDrag(e.clientX, e.clientY);
       }
+
+      if (isDragging && dragTarget && dragStart) {
+        updateTextDrag(e.clientX, e.clientY);
+      }
+
       if (!svgRef.current) return;
 
       // Pen tool anchor/handle dragging
@@ -274,11 +276,6 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
         return;
       }
 
-      if (isDragging && dragTarget && selectedTextElement) {
-        updateTextDrag(e.clientX, e.clientY);
-        return;
-      }
-
       // Pen tool preview
       if (penMode && !penDragging && currentPenPath) {
         checkPenPathSnap(svgRef.current, e.clientX, e.clientY);
@@ -302,7 +299,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
       if (isDragging && dragTarget === "circle") {
         stopCircleDrag();
       }
-      if (isDragging && dragTarget && selectedTextElement) {
+      if (isDragging && dragTarget === "text" && selectedTextElement) {
         stopTextDrag();
       }
     };
@@ -539,6 +536,16 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
   ]);
 
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+    if ((e.target as SVGElement).tagName === "text") {
+      const textElement = e.target as SVGTextElement;
+      const id = textElement.id; // Must have `id` attribute set in JSX or dynamically
+
+      if (!id) return;
+
+      startTextDrag(id, e.clientX, e.clientY);
+      return; // skip seat or pan drag
+    }
+
     // Pen tool: Check if starting handle creation using existing drag system
     if (penMode && currentPenPath && svgRef.current) {
       const handled = startPenHandleFromClick(svgRef.current, e.clientX, e.clientY);
@@ -549,7 +556,7 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
     if (e.target === svgRef.current && !isDragging) {
       startPanning(mode === 'admin', e.clientX, e.clientY);
     }
-  }, [mode, startPanning, isDragging, penMode, currentPenPath, startPenHandleFromClick]);
+  }, [mode, startPanning, isDragging, penMode, currentPenPath, startPenHandleFromClick, selectedTextElement, getSVGCoords, startTextDrag, svgRef]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
     if (!svgRef.current) return;
@@ -757,6 +764,12 @@ const MainContent: React.FC<MainContentProps> = ({ mode }) => {
                 return;
               }
               handleSVGClick(e); // only call this in admin
+              if (selectedRectPath) {
+                deselectRectPath();
+              }
+              if (selectedCirclePath) {
+                deselectCirclePath();
+              }
             }}
             onTouchStart={(e) => {
               if (mode !== 'admin') {

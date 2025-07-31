@@ -37,12 +37,24 @@ interface SeatState {
   seatMapType: SeatMapType;
   lastSVGString: string;
   maxSelectableSeats: number | null;
+  svgRef: SVGSVGElement | null;
 
   // Phase 4: Designer seat selection (string ID, not object)
   selectedDesignerSeat: string | null;
   addMode: boolean;
   isDragging: boolean;
-  dragStart: { x: number; y: number; seatX: number; seatY: number } | null;
+  dragStart: {
+    x: number;
+    y: number;
+    seatX: number;
+    seatY: number;
+  } | null;
+  textDragStart: {
+    x: number;
+    y: number;
+    textX: number;
+    textY: number;
+  } | null;
 
   // Phase 4: Drag state (string ID, not DOM element)
   dragTarget: string | null;
@@ -93,12 +105,23 @@ interface SeatState {
   // Current layout
   currentSeats: Seat[];
   textElements: TextElement[];
+  rectangles: {
+    points: { x: number; y: number }[];
+    stroke: string;
+    strokeWidth: string;
+  }[];
+  circles: {
+    center: { cx: number; cy: number; r: number };
+    stroke: string;
+    strokeWidth: string;
+  }[];
 
   bgImage: string | null;
   bgImageOpacity: number;
   bgImageFit: "contain" | "cover" | "stretch";
 
   // Actions
+  setSvgRef: (svg: SVGSVGElement) => void;
   setSelectedSeats: (seats: Set<string>) => void;
   addSeat: (seat: Seat) => void;
   updateSeat: (id: string, updates: Partial<Seat>) => void;
@@ -259,6 +282,11 @@ interface SeatState {
   exportLayout: () => string;
   importLayout: (layoutString: string, svg?: SVGSVGElement) => void;
   deselectAllDesignerObjects: () => void;
+  syncRectanglesState: (
+    rectPath: SVGPathElement,
+    color: string,
+    width: number
+  ) => void;
 }
 
 export const useSeatStore = create<SeatState>((set, get) => ({
@@ -309,8 +337,11 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   successMessage: "",
   currentSeats: [],
   textElements: [],
+  rectangles: [],
+  circles: [],
   isDragging: false,
   dragStart: null,
+  textDragStart: null,
   isPathDragging: false,
   penPreviewLine: null,
   penPreviewHandle: null,
@@ -322,6 +353,9 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   bgImageOpacity: 1,
   //bgImageVisible: true,
   bgImageFit: "contain",
+
+  svgRef: null,
+  setSvgRef: (svg: SVGSVGElement) => set({ svgRef: svg }),
 
   deselectAllDesignerObjects: () => {
     // Clear selections
@@ -336,7 +370,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     // Remove visual selection indicators
     document.querySelectorAll('[data-selected="true"]').forEach((el) => {
       el.removeAttribute("data-selected");
-      const prevStroke = el.getAttribute("data-prev-stroke") || "#000";
+      const prevStroke = el.getAttribute("data-prev-stroke") || "#000000";
       el.setAttribute("stroke", prevStroke);
     });
   },
@@ -354,24 +388,13 @@ export const useSeatStore = create<SeatState>((set, get) => ({
             handleOut: pt.handleOut,
           })),
           closed: p.closed,
-          stroke: p.path?.getAttribute("data-prev-stroke") || "#000",
+          stroke: p.path?.getAttribute("data-prev-stroke") || "#000000",
           strokeWidth: p.path?.getAttribute("stroke-width") || "2",
         })),
-        rects: Array.from(document.querySelectorAll("path[data-rect]")).map(
-          (path) => ({
-            d: path.getAttribute("d"),
-            stroke: path.getAttribute("data-prev-stroke"),
-            strokeWidth: path.getAttribute("stroke-width"),
-          })
-        ),
-        circles: Array.from(document.querySelectorAll("path[data-circle]")).map(
-          (path) => ({
-            d: path.getAttribute("d"),
-            stroke: path.getAttribute("data-prev-stroke"),
-            strokeWidth: path.getAttribute("stroke-width"),
-          })
-        ),
+        rects: state.rectangles,
+        circles: state.circles,
         texts: state.textElements.map((t) => ({
+          id: t.id,
           x: t.x,
           y: t.y,
           content: t.content,
@@ -390,7 +413,6 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
       // Clear existing elements
       if (svg) {
-        // Remove only designer elements, keep the SVG itself
         svg.querySelectorAll(".designer-element").forEach((el) => el.remove());
       }
 
@@ -407,13 +429,10 @@ export const useSeatStore = create<SeatState>((set, get) => ({
             "path"
           );
           path.setAttribute("class", "designer-element");
-
-          // Set path attributes
-          path.setAttribute("stroke", p.stroke || "#000");
+          path.setAttribute("stroke", p.stroke || "#000000");
           path.setAttribute("stroke-width", p.strokeWidth || "2");
           path.setAttribute("fill", "none");
-          path.setAttribute("data-prev-stroke", p.stroke || "#000");
-
+          path.setAttribute("data-prev-stroke", p.stroke || "#000000");
           svg.appendChild(path);
 
           // Recreate points structure
@@ -436,6 +455,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
             get().selectPenPath(penPath);
           });
 
+          get().updatePenPath(penPath, true);
           restoredPaths.push(penPath);
         });
 
@@ -445,70 +465,74 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       // Restore rectangles
       if (layout.rects && svg) {
         layout.rects.forEach((r: any) => {
+          if (!r.points || r.points.length !== 4) return;
+          const d = `M ${r.points[0].x} ${r.points[0].y} L ${r.points[1].x} ${r.points[1].y} L ${r.points[2].x} ${r.points[2].y} L ${r.points[3].x} ${r.points[3].y} Z`;
           const rectPath = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "path"
           );
-          rectPath.setAttribute("d", r.d);
-          rectPath.setAttribute("stroke", r.stroke);
-          rectPath.setAttribute("stroke-width", r.strokeWidth);
+          rectPath.setAttribute("d", d);
+          rectPath.setAttribute("stroke", r.stroke || "#000000");
+          rectPath.setAttribute("stroke-width", r.strokeWidth || "2");
           rectPath.setAttribute("fill", "none");
           rectPath.setAttribute("data-rect", "true");
-          rectPath.setAttribute("data-prev-stroke", r.stroke);
+          rectPath.setAttribute("data-prev-stroke", r.stroke || "#000000");
           rectPath.setAttribute("class", "designer-element");
           svg.appendChild(rectPath);
 
-          // Recreate rectangle points structure
-          const pathData = r.d.split(/[ ,]/).filter((x: string) => x);
-          const points = [];
-          for (let i = 1; i < pathData.length; i += 2) {
-            points.push({
-              x: parseFloat(pathData[i]),
-              y: parseFloat(pathData[i + 1]),
-            });
-          }
-          (rectPath as any)._rectPoints = points;
+          // Restore points for manipulation
+          (rectPath as any)._rectPoints = r.points.map((pt: any) => ({
+            x: pt.x,
+            y: pt.y,
+          }));
 
           // Reattach event handlers
+          get().addRectResizeHandle(rectPath);
+          get().makeRectPathInteractive(rectPath);
+
           rectPath.addEventListener("click", (e) => {
             e.stopPropagation();
             get().selectRectPath(rectPath);
           });
         });
+        set({ rectangles: layout.rects || [], selectedRectPath: null });
       }
 
       // Restore circles
       if (layout.circles && svg) {
         layout.circles.forEach((c: any) => {
+          if (!c.center) return;
+          const { cx, cy, r } = c.center;
+          const d = `
+            M ${cx - r},${cy}
+            a ${r},${r} 0 1,0 ${2 * r},0
+            a ${r},${r} 0 1,0 ${-2 * r},0
+          `;
           const circlePath = document.createElementNS(
             "http://www.w3.org/2000/svg",
             "path"
           );
-          circlePath.setAttribute("d", c.d);
-          circlePath.setAttribute("stroke", c.stroke);
-          circlePath.setAttribute("stroke-width", c.strokeWidth);
+          circlePath.setAttribute("d", d);
+          circlePath.setAttribute("stroke", c.stroke || "#000000");
+          circlePath.setAttribute("stroke-width", c.strokeWidth || "2");
           circlePath.setAttribute("fill", "none");
           circlePath.setAttribute("data-circle", "true");
-          circlePath.setAttribute("data-prev-stroke", c.stroke);
+          circlePath.setAttribute("data-prev-stroke", c.stroke || "#000000");
           circlePath.setAttribute("class", "designer-element");
           svg.appendChild(circlePath);
 
-          // Extract circle data from path
-          const matches = c.d.match(/M ([\d.-]+),([\d.-]+) a ([\d.-]+),/);
-          if (matches) {
-            (circlePath as any)._circleData = {
-              cx: parseFloat(matches[1]) + parseFloat(matches[3]),
-              cy: parseFloat(matches[2]),
-              r: parseFloat(matches[3]),
-            };
-          }
+          (circlePath as any)._circleData = { cx, cy, r };
 
-          // Reattach event handlers
+          // Add handles and interaction
+          get().addCircleResizeHandle(circlePath);
+          get().makeCirclePathInteractive(circlePath);
+
           circlePath.addEventListener("click", (e) => {
             e.stopPropagation();
             get().selectCirclePath(circlePath);
           });
         });
+        set({ circles: layout.circles || [], selectedCirclePath: null });
       }
 
       // Restore text elements
@@ -582,17 +606,32 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       "http://www.w3.org/2000/svg",
       "text"
     );
+
+    // Basic attributes
     textEl.setAttribute("x", x.toString());
     textEl.setAttribute("y", y.toString());
     textEl.setAttribute("font-size", "16");
     textEl.setAttribute("data-base-font-size", "16");
-    textEl.setAttribute("fill", "#000");
+    textEl.setAttribute("fill", "#000000");
     textEl.setAttribute("text-anchor", "middle");
     textEl.setAttribute("dominant-baseline", "middle");
     textEl.setAttribute("class", "designer-element");
     textEl.textContent = "Edit text...";
+
+    // Add drag-related attributes
+    textEl.setAttribute("data-text-id", id);
     textEl.style.cursor = "move";
+
     svg.appendChild(textEl);
+
+    // Add event listeners for dragging
+    textEl.addEventListener("mousedown", (e) => {
+      if (get().mode !== "admin") return;
+      e.stopPropagation();
+      get().startTextDrag(id, e.clientX, e.clientY);
+    });
+
+    set({ textMode: false });
 
     set((state) => ({
       textElements: [
@@ -603,47 +642,38 @@ export const useSeatStore = create<SeatState>((set, get) => ({
           y,
           content: "Edit text...",
           fontSize: 16,
-          color: "#000",
+          color: "#000000",
           element: textEl,
         },
       ],
       selectedTextElement: id,
     }));
-    textEl.addEventListener("mousedown", (e) => {
-      if (get().mode !== "admin") return;
-      e.stopPropagation();
-      get().startTextDrag(id, e.clientX, e.clientY);
-    });
-    textEl.addEventListener("click", (e) => {
-      if (get().mode !== "admin") return;
-      e.stopPropagation();
-      get().selectTextElement(id);
-    });
-    // After creating textEl, add:
-    if (get().mode !== "admin") {
-      textEl.style.pointerEvents = "none";
-    } else {
-      textEl.style.pointerEvents = "auto";
-    }
-    set({ textMode: false });
   },
 
   selectTextElement: (id: string | null) => {
     if (get().mode !== "admin") return;
+
     set((state) => {
       // Remove highlight from previous
       if (state.selectedTextElement) {
         const prev = state.textElements.find(
           (t) => t.id === state.selectedTextElement
         );
-        if (prev && prev.element) prev.element.setAttribute("stroke", "none");
+        if (prev?.element) {
+          prev.element.setAttribute("stroke", "none");
+          prev.element.setAttribute("stroke-width", "0");
+        }
       }
+
       // Add highlight to new
       if (id) {
         const next = state.textElements.find((t) => t.id === id);
-        if (next && next.element)
-          next.element.setAttribute("stroke", "#f32121ff");
+        if (next?.element) {
+          next.element.setAttribute("stroke", "#f32121");
+          next.element.setAttribute("stroke-width", "1");
+        }
       }
+
       return { selectedTextElement: id };
     });
   },
@@ -740,35 +770,62 @@ export const useSeatStore = create<SeatState>((set, get) => ({
   },
 
   startTextDrag: (id: string, clientX: number, clientY: number) => {
-    const el = get().textElements.find((t) => t.id === id);
-    if (!el) return;
+    const { textElements } = get();
+    const text = textElements.find((t) => t.id === id);
+    if (!text || !text.element) return;
+
     set({
-      isDragging: true,
-      dragStart: { x: clientX, y: clientY, seatX: el.x, seatY: el.y },
       dragTarget: id,
-      selectedTextElement: id,
+      isDragging: true,
+      textDragStart: {
+        x: clientX,
+        y: clientY,
+        textX: parseFloat(text.element.getAttribute("x") || "0"),
+        textY: parseFloat(text.element.getAttribute("y") || "0"),
+      },
     });
   },
 
   updateTextDrag: (clientX: number, clientY: number) => {
-    const { dragStart, dragTarget, textElements } = get();
-    if (!dragStart || !dragTarget) return;
-    const dx = clientX - dragStart.x;
-    const dy = clientY - dragStart.y;
-    const el = textElements.find((t) => t.id === dragTarget);
-    if (!el) return;
-    get().moveTextElement(
-      dragTarget,
-      dragStart.seatX + dx,
-      dragStart.seatY + dy
-    );
+    const { dragTarget, textDragStart, textElements } = get();
+    if (
+      !dragTarget ||
+      !textDragStart ||
+      textDragStart.textX === undefined ||
+      textDragStart.textY === undefined
+    )
+      return;
+
+    const text = textElements.find((t) => t.id === dragTarget);
+    if (!text || !text.element) return;
+
+    const svg = text.element.ownerSVGElement;
+    if (!svg) return;
+
+    const current = getSVGCoordsFromClient(svg, clientX, clientY);
+    const start = getSVGCoordsFromClient(svg, textDragStart.x, textDragStart.y);
+
+    const dx = current.x - start.x;
+    const dy = current.y - start.y;
+
+    const newX = textDragStart.textX + dx;
+    const newY = textDragStart.textY + dy;
+
+    text.element.setAttribute("x", newX.toString());
+    text.element.setAttribute("y", newY.toString());
+
+    set({
+      textElements: textElements.map((t) =>
+        t.id === dragTarget ? { ...t, x: newX, y: newY } : t
+      ),
+    });
   },
 
   stopTextDrag: () => {
     set({
       isDragging: false,
-      dragStart: null,
       dragTarget: null,
+      dragStart: null,
     });
   },
 
@@ -786,10 +843,10 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     `;
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", d);
-    path.setAttribute("stroke", "#000");
+    path.setAttribute("stroke", "#000000");
     path.setAttribute("stroke-width", "2");
     path.setAttribute("fill", "none");
-    path.setAttribute("data-prev-stroke", "#000");
+    path.setAttribute("data-prev-stroke", "#000000");
     path.setAttribute("class", "designer-element");
     path.style.cursor = "pointer";
     svg.appendChild(path);
@@ -816,6 +873,16 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     get().makeCirclePathInteractive(path);
     get().selectCirclePath(path);
 
+    set((state) => ({
+      circles: [
+        ...state.circles,
+        {
+          center: { cx, cy, r },
+          stroke: "#000000",
+          strokeWidth: "2",
+        },
+      ],
+    }));
     set({ shapeMode: "none" });
   },
 
@@ -824,7 +891,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     const { selectedCirclePath } = get();
     if (selectedCirclePath && selectedCirclePath !== circlePath) {
       const prev =
-        selectedCirclePath.getAttribute("data-prev-stroke") || "#000";
+        selectedCirclePath.getAttribute("data-prev-stroke") || "#000000";
       selectedCirclePath.setAttribute("stroke", prev);
       const handle = (selectedCirclePath as any)._resizeHandle;
       if (handle) {
@@ -835,7 +902,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     if (circlePath) {
       circlePath.setAttribute(
         "data-prev-stroke",
-        circlePath.getAttribute("stroke") || "#000"
+        circlePath.getAttribute("stroke") || "#000000"
       );
       circlePath.setAttribute("stroke", "#f44336");
       get().addCircleResizeHandle(circlePath);
@@ -855,7 +922,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       "circle"
     );
     handle.setAttribute("r", "3");
-    handle.setAttribute("fill", "#000");
+    handle.setAttribute("fill", "#000000");
     handle.style.cursor = "ew-resize";
     const svg = circlePath.ownerSVGElement;
     if (svg) svg.appendChild(handle);
@@ -916,6 +983,26 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     // Update resize handle if present
     const handle = (circlePath as any)._resizeHandle;
     if (handle && handle._updateHandle) handle._updateHandle();
+
+    set((state) => ({
+      circles: state.circles.map((circle) =>
+        // Match by previous cx, cy, r (before move/resize)
+        (circlePath as any)._lastCircleData &&
+        circle.center.cx === (circlePath as any)._lastCircleData.cx &&
+        circle.center.cy === (circlePath as any)._lastCircleData.cy &&
+        circle.center.r === (circlePath as any)._lastCircleData.r
+          ? {
+              ...circle,
+              center: { cx, cy, r },
+              stroke: circlePath.getAttribute("stroke") || "#000000",
+              strokeWidth: circlePath.getAttribute("stroke-width") || "2",
+            }
+          : circle
+      ),
+    }));
+
+    // Store last data for next update
+    (circlePath as any)._lastCircleData = { cx, cy, r };
   },
 
   makeCirclePathInteractive: (circlePath: SVGPathElement) => {
@@ -1001,7 +1088,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     const { selectedCirclePath } = get();
     if (selectedCirclePath) {
       const prev =
-        selectedCirclePath.getAttribute("data-prev-stroke") || "#000";
+        selectedCirclePath.getAttribute("data-prev-stroke") || "#000000";
       selectedCirclePath.setAttribute("stroke", prev);
       const handle = (selectedCirclePath as any)._resizeHandle;
       if (handle) {
@@ -1021,6 +1108,18 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     } else {
       circlePath.setAttribute("stroke", color);
     }
+    // --- Update circles state ---
+    const data = (circlePath as any)._circleData;
+    if (!data) return;
+    set((state) => ({
+      circles: state.circles.map((circle) =>
+        circle.center.cx === data.cx &&
+        circle.center.cy === data.cy &&
+        circle.center.r === data.r
+          ? { ...circle, stroke: color }
+          : circle
+      ),
+    }));
   },
 
   updateCirclePathStrokeWidth: (circlePath: SVGPathElement, width: number) => {
@@ -1032,6 +1131,18 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       const newR = Math.max(3, Math.round(width / 2));
       handle.setAttribute("r", newR.toString());
     }
+    // --- Update circles state ---
+    const data = (circlePath as any)._circleData;
+    if (!data) return;
+    set((state) => ({
+      circles: state.circles.map((circle) =>
+        circle.center.cx === data.cx &&
+        circle.center.cy === data.cy &&
+        circle.center.r === data.r
+          ? { ...circle, strokeWidth: width.toString() }
+          : circle
+      ),
+    }));
   },
 
   startRectPathDrag: (
@@ -1059,6 +1170,30 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     get().deselectRectPath();
   },
 
+  syncRectanglesState: (
+    rectPath: SVGPathElement,
+    color: string,
+    width: number
+  ) => {
+    // Update rectangles state by matching all attributes of the selected rect
+    const points = (rectPath as any)._rectPoints;
+    if (!points) return;
+    set((state) => ({
+      rectangles: state.rectangles.map((rect) => {
+        // Compare all attributes (points, stroke, strokeWidth)
+        const isSame =
+          rect.points.length === points.length &&
+          rect.points.every(
+            (pt, idx) => pt.x === points[idx].x && pt.y === points[idx].y
+          );
+        if (isSame) {
+          return { ...rect, stroke: color, strokeWidth: width.toString() };
+        }
+        return rect;
+      }),
+    }));
+  },
+
   updateRectPathStroke: (rectPath: SVGPathElement, color: string) => {
     if (!rectPath) return;
 
@@ -1072,6 +1207,11 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     } else {
       rectPath.setAttribute("stroke", color);
     }
+    get().syncRectanglesState(
+      rectPath,
+      color,
+      parseFloat(rectPath.getAttribute("stroke-width") || "2")
+    );
   },
 
   updateRectPathStrokeWidth: (rectPath: SVGPathElement, width: number) => {
@@ -1084,6 +1224,11 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       const newR = Math.max(3, Math.round(width / 2));
       handle.setAttribute("r", newR.toString());
     }
+    get().syncRectanglesState(
+      rectPath,
+      rectPath.getAttribute("stroke") || "#000000",
+      width
+    );
   },
 
   createRectangle: (svg: SVGSVGElement, clientX: number, clientY: number) => {
@@ -1106,10 +1251,10 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
     path.setAttribute("d", d);
-    path.setAttribute("stroke", "#000");
+    path.setAttribute("stroke", "#000000");
     path.setAttribute("stroke-width", "2");
     path.setAttribute("fill", "none");
-    path.setAttribute("data-prev-stroke", "#000"); // Store original color
+    path.setAttribute("data-prev-stroke", "#000000"); // Store original color
     path.setAttribute("class", "designer-element");
     path.style.cursor = "pointer";
 
@@ -1123,7 +1268,17 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     get().makeRectPathInteractive(path);
     get().selectRectPath(path);
 
-    set({ rectMode: false });
+    set((state) => ({
+      rectangles: [
+        ...state.rectangles,
+        {
+          points: points.map((pt) => ({ ...pt })),
+          stroke: "#000000",
+          strokeWidth: "2",
+        },
+      ],
+      rectMode: false,
+    }));
   },
 
   selectRectPath: (rectPath: SVGPathElement | null) => {
@@ -1132,7 +1287,8 @@ export const useSeatStore = create<SeatState>((set, get) => ({
 
     if (selectedRectPath && selectedRectPath !== rectPath) {
       // Restore previous color on deselect
-      const prev = selectedRectPath.getAttribute("data-prev-stroke") || "#000";
+      const prev =
+        selectedRectPath.getAttribute("data-prev-stroke") || "#000000";
       selectedRectPath.setAttribute("stroke", prev);
       // Remove resize handle
       const handle = (selectedRectPath as any)._resizeHandle;
@@ -1143,11 +1299,13 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     }
 
     if (rectPath) {
-      // Store current color before highlighting
-      rectPath.setAttribute(
-        "data-prev-stroke",
-        rectPath.getAttribute("stroke") || "#000"
-      );
+      // Only set data-prev-stroke if not already set
+      if (!rectPath.getAttribute("data-prev-stroke")) {
+        rectPath.setAttribute(
+          "data-prev-stroke",
+          rectPath.getAttribute("stroke") || "#000000"
+        );
+      }
       rectPath.setAttribute("stroke", "#f44336");
 
       // Add resize handle
@@ -1172,7 +1330,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       "circle"
     );
     handle.setAttribute("r", "3");
-    handle.setAttribute("fill", "#000");
+    handle.setAttribute("fill", "#000000");
     handle.style.cursor = "nwse-resize";
 
     const svg = rectPath.ownerSVGElement;
@@ -1273,6 +1431,16 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       handle.setAttribute("cx", points[idx].x.toString());
       handle.setAttribute("cy", points[idx].y.toString());
     }
+    // Update rectangles array in state
+    set((state) => ({
+      rectangles: state.rectangles.map((rect) =>
+        rectPath &&
+        rect.points[0].x === points[0].x &&
+        rect.points[0].y === points[0].y
+          ? { ...rect, points: points.map((pt: any) => ({ ...pt })) }
+          : rect
+      ),
+    }));
   },
 
   makeRectPathInteractive: (rectPath: SVGPathElement) => {
@@ -1300,11 +1468,23 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       handle.remove();
     }
 
+    // Get the points from the rectPath for comparison
+    const points = (rectPath as any)._rectPoints;
+
     // Clear selection if this was selected
     const { selectedRectPath } = get();
-    if (selectedRectPath === rectPath) {
-      set({ selectedRectPath: null });
-    }
+    set((state) => ({
+      rectangles: state.rectangles.filter(
+        (rect) =>
+          !(
+            points &&
+            rect.points[0].x === points[0].x &&
+            rect.points[0].y === points[0].y
+          )
+      ),
+      selectedRectPath:
+        state.selectedRectPath === rectPath ? null : state.selectedRectPath,
+    }));
   },
 
   rotateRectPath: (rectPath: SVGPathElement, angleDeg: number) => {
@@ -1333,7 +1513,8 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     const { selectedRectPath } = get();
     if (selectedRectPath) {
       // Restore previous color
-      const prev = selectedRectPath.getAttribute("data-prev-stroke") || "#000";
+      const prev =
+        selectedRectPath.getAttribute("data-prev-stroke") || "#000000";
       selectedRectPath.setAttribute("stroke", prev);
 
       // Remove resize handle
@@ -1368,10 +1549,10 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     let y = svgCoords.y;
 
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("stroke", "#000");
+    path.setAttribute("stroke", "#000000");
     path.setAttribute("stroke-width", "2");
     path.setAttribute("fill", "none");
-    path.setAttribute("data-prev-stroke", "#000");
+    path.setAttribute("data-prev-stroke", "#000000");
     path.setAttribute("class", "designer-element");
     svg.appendChild(path);
 
@@ -1482,7 +1663,8 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       firstPt.anchorCircle.setAttribute("fill", "rgba(0,0,0,0)");
     }
 
-    const currentStroke = currentPenPath.path.getAttribute("stroke") || "#000";
+    const currentStroke =
+      currentPenPath.path.getAttribute("stroke") || "#000000";
     if (!currentPenPath.path.getAttribute("data-prev-stroke")) {
       currentPenPath.path.setAttribute("data-prev-stroke", currentStroke);
     }
@@ -1510,7 +1692,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     const { selectedPenPath } = get();
     if (selectedPenPath && selectedPenPath !== path) {
       const prevStroke =
-        selectedPenPath.path.getAttribute("data-prev-stroke") || "#000";
+        selectedPenPath.path.getAttribute("data-prev-stroke") || "#000000";
       selectedPenPath.path.setAttribute("stroke", prevStroke);
       get().updatePenPath(selectedPenPath, true);
     }
@@ -1518,7 +1700,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     set({ selectedPenPath: path });
 
     if (path) {
-      const currentStroke = path.path.getAttribute("stroke") || "#000";
+      const currentStroke = path.path.getAttribute("stroke") || "#000000";
       if (!path.path.getAttribute("data-prev-stroke")) {
         path.path.setAttribute("data-prev-stroke", currentStroke);
       }
@@ -1532,7 +1714,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
     const { selectedPenPath } = get();
     if (selectedPenPath) {
       const prevStroke =
-        selectedPenPath.path.getAttribute("data-prev-stroke") || "#000";
+        selectedPenPath.path.getAttribute("data-prev-stroke") || "#000000";
       selectedPenPath.path.setAttribute("stroke", prevStroke);
 
       // Hide handles by calling updatePenPath after setting selectedPenPath to null
@@ -1941,6 +2123,37 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       pt.handleLineOut?.remove();
       pt.handleInCircle?.remove();
       pt.handleOutCircle?.remove();
+      pt.anchorCircle?.remove();
+      pt.anchorDot?.remove();
+    });
+
+    // Always (re)create anchor SVG elements for every point
+    pathObj.points.forEach((pt) => {
+      // Large invisible anchor for hit-testing
+      pt.anchorCircle = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "circle"
+      );
+      pt.anchorCircle.setAttribute("cx", pt.x.toString());
+      pt.anchorCircle.setAttribute("cy", pt.y.toString());
+      pt.anchorCircle.setAttribute("r", "7");
+      pt.anchorCircle.setAttribute("fill", "rgba(0,0,0,0)");
+      pt.anchorCircle.setAttribute("stroke", "none");
+      pt.anchorCircle.style.cursor = "pointer";
+      pt.anchorCircle.style.pointerEvents = "all";
+      pathObj.path.parentNode?.appendChild(pt.anchorCircle);
+
+      // Small visible anchor for UI
+      pt.anchorDot = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "circle"
+      );
+      pt.anchorDot.setAttribute("cx", pt.x.toString());
+      pt.anchorDot.setAttribute("cy", pt.y.toString());
+      pt.anchorDot.setAttribute("r", "3");
+      pt.anchorDot.setAttribute("fill", "rgb(0,0,0)");
+      pt.anchorDot.style.pointerEvents = "none";
+      pathObj.path.parentNode?.appendChild(pt.anchorDot);
     });
 
     // Show handles if: 1) Not explicitly hiding AND 2) Path is selected OR currently being created
@@ -2092,7 +2305,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
       pathObj.path.setAttribute("stroke", "#f44336"); // Red for selected
     } else {
       const prevStroke =
-        pathObj.path.getAttribute("data-prev-stroke") || "#000";
+        pathObj.path.getAttribute("data-prev-stroke") || "#000000";
       pathObj.path.setAttribute("stroke", prevStroke);
     }
   },
