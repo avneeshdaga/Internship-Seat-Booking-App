@@ -1257,6 +1257,7 @@ export const useSeatStore = create<SeatState>((set, get) => ({
             }
           : rect
       ),
+      isRectPathDragging: false,
       dragging: false,
       selectedId: null,
     }));
